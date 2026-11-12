@@ -6,6 +6,16 @@ let activeLists = [];
 let currentListData = [];
 let currentExportType = "";
 
+// -- Core API Helper (Fixes the CORS/Saving Issue) --
+async function apiPost(payload) {
+    const res = await fetch(API_URL, { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' }, 
+        body: JSON.stringify(payload) 
+    });
+    return await res.json();
+}
+
 // -- Authentication --
 if (sessionStorage.getItem("user")) {
     USER = JSON.parse(sessionStorage.getItem("user"));
@@ -22,8 +32,7 @@ async function verifyLogin() {
     btn.innerText = "Verifying..."; btn.disabled = true; err.style.display = 'none';
 
     try {
-        const res = await fetch(API_URL, { method: 'POST', body: JSON.stringify({action: "login", username: u, password: p}) });
-        const data = await res.json();
+        const data = await apiPost({action: "login", username: u, password: p});
         if (data.status === "success") {
             USER = { username: u, role: data.role };
             sessionStorage.setItem("user", JSON.stringify(USER));
@@ -52,8 +61,7 @@ function showApp() {
 // -- Data Loading --
 async function fetchInitData() {
     try {
-        const res = await fetch(API_URL, { method: 'POST', body: JSON.stringify({action: "getInit", username: USER.username, role: USER.role}) });
-        const data = await res.json();
+        const data = await apiPost({action: "getInit", username: USER.username, role: USER.role});
         if(data.status === "success") {
             productDB = data.products;
             activeLists = data.lists;
@@ -76,7 +84,7 @@ async function handleListChange() {
     if (val === "_NEW_") {
         const newName = prompt("Enter new list name (e.g. November Reagents):");
         if(newName) {
-            await fetch(API_URL, { method: 'POST', body: JSON.stringify({action: "manageList", subAction: "create", listName: newName, username: USER.username}) });
+            await apiPost({action: "manageList", subAction: "create", listName: newName, username: USER.username});
             fetchInitData(); // Reload everything
         } else {
             document.getElementById('listSelector').value = activeLists[0] ? activeLists[0].name : "";
@@ -92,8 +100,7 @@ async function handleListChange() {
     document.getElementById('budgetInHand').value = listMeta.budget;
 
     try {
-        const res = await fetch(API_URL, { method: 'POST', body: JSON.stringify({action: "getListData", listName: val}) });
-        currentListData = await res.json();
+        currentListData = await apiPost({action: "getListData", listName: val});
         renderTable();
     } catch (e) { tbody.innerHTML = '<tr><td colspan="11" class="text-danger text-center">Load failed</td></tr>'; }
 }
@@ -212,7 +219,7 @@ document.getElementById('purchaseForm').addEventListener('submit', async functio
 
     const btn = e.target.querySelector('button'); btn.innerText = "..."; btn.disabled = true;
     try {
-        await fetch(API_URL, { method: 'POST', body: JSON.stringify(payload) });
+        await apiPost(payload);
         e.target.reset(); document.getElementById('pUnit').disabled = false;
         handleListChange(); // reload table
     } catch(err) { alert("Save failed"); } finally { btn.innerText = "Add to List"; btn.disabled = false; }
@@ -231,7 +238,7 @@ document.getElementById('budgetInHand').addEventListener('input', calcBalance);
 async function updateBudget() {
     const lName = document.getElementById('listSelector').value;
     const b = document.getElementById('budgetInHand').value;
-    await fetch(API_URL, { method: 'POST', body: JSON.stringify({action: "manageList", subAction: "updateMeta", listName: lName, budget: b}) });
+    await apiPost({action: "manageList", subAction: "updateMeta", listName: lName, budget: b});
     alert("Budget saved for this list.");
 }
 
@@ -247,7 +254,7 @@ function manageList() {
 async function saveListSettings() {
     const lName = document.getElementById('listSelector').value;
     const cols = document.getElementById('listCollabs').value;
-    await fetch(API_URL, { method: 'POST', body: JSON.stringify({action: "manageList", subAction: "updateMeta", listName: lName, collabs: cols}) });
+    await apiPost({action: "manageList", subAction: "updateMeta", listName: lName, collabs: cols});
     bootstrap.Modal.getInstance(document.getElementById('listModal')).hide();
     fetchInitData();
 }
@@ -263,7 +270,7 @@ function openInventoryModal() {
     new bootstrap.Modal(document.getElementById('inventoryModal')).show();
 }
 
-function editProduct(code) {
+async function editProduct(code) {
     const p = productDB[code];
     const newName = prompt("Edit Name:", p.name);
     if(!newName) return;
@@ -274,7 +281,7 @@ function editProduct(code) {
     productDB[code].category = newCat;
     productDB[code].minQty = newMin;
     
-    fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: "updateProduct", role: USER.role, product: {code: code, name: newName, category: newCat, company: p.company, specs: p.specs, compPrice: p.compPrice, minQty: newMin, unit: p.unit} }) });
+    await apiPost({ action: "updateProduct", role: USER.role, product: {code: code, name: newName, category: newCat, company: p.company, specs: p.specs, compPrice: p.compPrice, minQty: newMin, unit: p.unit} });
     openInventoryModal(); // refresh
 }
 
