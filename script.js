@@ -1,3 +1,30 @@
+// -- Dark Mode Initialization & Toggle --
+const currentTheme = localStorage.getItem('theme') || 'light';
+document.documentElement.setAttribute('data-bs-theme', currentTheme);
+
+function toggleTheme() {
+    const html = document.documentElement;
+    const icon = document.getElementById('themeIcon');
+    if (html.getAttribute('data-bs-theme') === 'dark') {
+        html.setAttribute('data-bs-theme', 'light');
+        localStorage.setItem('theme', 'light');
+        icon.className = "bi bi-moon-fill";
+    } else {
+        html.setAttribute('data-bs-theme', 'dark');
+        localStorage.setItem('theme', 'dark');
+        icon.className = "bi bi-sun-fill text-warning";
+    }
+}
+
+// Ensure icon is correct on load
+window.addEventListener('DOMContentLoaded', () => {
+    const icon = document.getElementById('themeIcon');
+    if(icon) {
+        if(currentTheme === 'dark') icon.className = "bi bi-sun-fill text-warning";
+        else icon.className = "bi bi-moon-fill";
+    }
+});
+
 const API_URL = "https://script.google.com/macros/s/AKfycbwet17KJDzMQl0FlMOaqB8M0otVWCckd9DEnq4vlnvmOHRix1HBNaYpaVRtxYM6r2Y/exec";
     
 let USER = null;
