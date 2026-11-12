@@ -5,11 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dr. Nimmi Das Lab - Purchase Management</title>
     
-    <!-- CSS & Icons -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
     
-    <!-- Export Libraries -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
@@ -26,24 +24,25 @@
 
         .table-responsive { background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); max-height: 65vh; overflow: auto; }
         th { white-space: nowrap; }
-        .specs-col { min-width: 250px; }
+        .specs-col { min-width: 280px; }
+        .name-col { min-width: 200px; }
         
-        /* Frozen Columns (0 to 5) */
+        /* Frozen Columns */
         thead th { position: sticky; top: 0; z-index: 2; background-color: #212529 !important; color: white;}
         .sticky-col-0 { position: sticky; left: 0px;   min-width: 50px;  max-width: 50px;  z-index: 1; }
         .sticky-col-1 { position: sticky; left: 50px;  min-width: 80px;  max-width: 80px;  z-index: 1; }
-        .sticky-col-2 { position: sticky; left: 130px; min-width: 100px; max-width: 100px; z-index: 1; }
-        .sticky-col-3 { position: sticky; left: 230px; min-width: 150px; max-width: 150px; z-index: 1; }
-        .sticky-col-4 { position: sticky; left: 380px; min-width: 120px; max-width: 120px; z-index: 1; }
-        .sticky-col-5 { position: sticky; left: 500px; min-width: 120px; max-width: 120px; z-index: 1; border-right: 2px solid #6c757d; }
+        .sticky-col-2 { position: sticky; left: 130px; min-width: 100px; max-width: 100px; z-index: 1; border-right: 2px solid #6c757d; }
         
-        thead .sticky-col-0, thead .sticky-col-1, thead .sticky-col-2, thead .sticky-col-3, thead .sticky-col-4, thead .sticky-col-5 { z-index: 3 !important; }
-        tbody tr td.sticky-col-0, tbody tr td.sticky-col-1, tbody tr td.sticky-col-2, tbody tr td.sticky-col-3, tbody tr td.sticky-col-4, tbody tr td.sticky-col-5 { background-color: #ffffff; }
-        tbody tr:hover td.sticky-col-0, tbody tr:hover td.sticky-col-1, tbody tr:hover td.sticky-col-2, tbody tr:hover td.sticky-col-3, tbody tr:hover td.sticky-col-4, tbody tr:hover td.sticky-col-5 { background-color: #ececec; }
+        thead .sticky-col-0, thead .sticky-col-1, thead .sticky-col-2 { z-index: 3 !important; }
+        tbody tr td.sticky-col-0, tbody tr td.sticky-col-1, tbody tr td.sticky-col-2 { background-color: #ffffff; }
+        tbody tr:hover td.sticky-col-0, tbody tr:hover td.sticky-col-1, tbody tr:hover td.sticky-col-2 { background-color: #ececec; }
         tbody tr.table-warning td { background-color: #fff3cd !important; }
 
         .budget-box { background-color: #e8f5e9; border: 2px solid #a5d6a7; border-radius: 12px; padding: 15px; }
         #invTable thead th { position: static; z-index: auto; background-color: #e9ecef !important; color: #000; }
+        
+        /* Proper Input Widths */
+        .number-box { min-width: 70px; padding: 0.25rem; }
     </style>
 </head>
 <body>
@@ -67,7 +66,7 @@
                 <select id="listSelector" class="form-select w-auto fw-bold" onchange="handleListChange()">
                     <option value="" disabled selected>Select a List...</option>
                 </select>
-                <button class="btn btn-sm btn-outline-secondary" onclick="manageList()"><i class="bi bi-gear"></i> Setup</button>
+                <button class="btn btn-sm btn-outline-secondary" onclick="manageList()"><i class="bi bi-gear"></i> Setup List</button>
                 
                 <div class="dropdown">
                     <button class="btn btn-success dropdown-toggle" type="button" data-bs-toggle="dropdown"><i class="bi bi-box-arrow-right"></i> Export</button>
@@ -81,6 +80,7 @@
                 </div>
                 
                 <button class="btn btn-dark" onclick="openInventoryModal()"><i class="bi bi-boxes"></i> Search / Edit Product Inventory</button>
+                <button class="btn btn-outline-dark" id="btnUsers" onclick="openUsersModal()" style="display:none;"><i class="bi bi-people-fill"></i> Users</button>
             </div>
 
             <div class="nav-user text-end d-flex flex-column align-items-end">
@@ -115,9 +115,9 @@
                         <th class="sticky-col-0">SL No</th>
                         <th class="sticky-col-1 text-center">Action</th>
                         <th class="sticky-col-2">Code</th>
-                        <th class="sticky-col-3">Name</th>
-                        <th class="sticky-col-4">Category</th>
-                        <th class="sticky-col-5">Company</th>
+                        <th class="name-col">Name</th>
+                        <th>Category</th>
+                        <th>Company</th>
                         <th class="specs-col">Specifications</th>
                         <th>Min Qty</th>
                         <th>Req Qty</th>
@@ -153,7 +153,29 @@
     </div>
 </div>
 
-<!-- Modals remain the same functionally, UI updated in CSS -->
+<!-- List Setup Modal (With Rename & Delete) -->
+<div class="modal fade" id="listModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title"><i class="bi bi-gear"></i> List Setup</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <label class="fw-bold mb-1">Rename List</label>
+        <div class="d-flex gap-2 mb-3">
+            <input type="text" id="listRename" class="form-control">
+            <button class="btn btn-primary" onclick="renameList()">Rename</button>
+        </div>
+        <hr>
+        <label class="fw-bold mb-1"><i class="bi bi-people"></i> Collaborators (comma separated usernames)</label>
+        <input type="text" id="listCollabs" class="form-control mb-3">
+        <button class="btn btn-success w-100 mb-3" onclick="saveListSettings()">Save Collaborators</button>
+        <hr>
+        <button class="btn btn-outline-danger w-100" onclick="deleteList()"><i class="bi bi-trash"></i> Delete This List Completely</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Inventory Edit Modal -->
 <div class="modal fade" id="fullEditModal" tabindex="-1">
   <div class="modal-dialog">
     <div class="modal-content">
@@ -161,10 +183,10 @@
       <div class="modal-body">
         <input type="hidden" id="editOrigCode">
         <div class="mb-2"><label class="form-label small">Code</label><input type="text" id="editCode" class="form-control" disabled></div>
-        <div class="mb-2"><label class="form-label small">Name</label><input type="text" id="editName" class="form-control"></div>
+        <div class="mb-2"><label class="form-label small">Name</label><textarea id="editName" class="form-control" rows="2"></textarea></div>
         <div class="mb-2"><label class="form-label small">Category</label><input type="text" id="editCat" class="form-control"></div>
         <div class="mb-2"><label class="form-label small">Company</label><input type="text" id="editComp" class="form-control"></div>
-        <div class="mb-2"><label class="form-label small">Specifications</label><input type="text" id="editSpecs" class="form-control"></div>
+        <div class="mb-2"><label class="form-label small">Specifications</label><textarea id="editSpecs" class="form-control" rows="3"></textarea></div>
         <div class="row mb-2">
             <div class="col"><label class="form-label small">Min Qty</label><input type="number" id="editMin" class="form-control"></div>
             <div class="col"><label class="form-label small">Unit</label><input type="text" id="editUnit" class="form-control"></div>
@@ -176,16 +198,17 @@
   </div>
 </div>
 
+<!-- Inventory Modal -->
 <div class="modal fade" id="inventoryModal" tabindex="-1">
   <div class="modal-dialog modal-xl modal-dialog-scrollable">
     <div class="modal-content">
       <div class="modal-header bg-light">
-        <h5 class="modal-title"><i class="bi bi-boxes"></i> Search / Edit Product Inventory</h5>
+        <h5 class="modal-title"><i class="bi bi-boxes"></i> Product Inventory</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
         <input type="text" id="invSearch" class="form-control mb-3" placeholder="Search Database...">
-        <div class="table-responsive" style="max-height: 50vh; overflow: auto;">
+        <div class="table-responsive" style="max-height: 50vh;">
             <table class="table table-sm table-bordered" id="invTable">
                 <thead class="table-secondary"><tr><th>Code</th><th>Name</th><th>Category</th><th>Company</th><th>Specs</th><th>Min Qty</th><th>Unit</th><th>Price</th><th>Action</th></tr></thead>
                 <tbody id="invBody"></tbody>
@@ -196,19 +219,39 @@
   </div>
 </div>
 
-<div class="modal fade" id="listModal" tabindex="-1">
-  <div class="modal-dialog">
+<!-- User Management Modal -->
+<div class="modal fade" id="usersModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
     <div class="modal-content">
-      <div class="modal-header"><h5 class="modal-title"><i class="bi bi-gear"></i> List Setup</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-header bg-light">
+        <h5 class="modal-title"><i class="bi bi-people-fill"></i> User Management</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
       <div class="modal-body">
-        <label><i class="bi bi-people"></i> Collaborators (comma separated usernames)</label>
-        <input type="text" id="listCollabs" class="form-control mb-3">
-        <button class="btn btn-primary w-100" onclick="saveListSettings()">Save Settings</button>
+        <form id="addUserForm" class="row g-2 mb-4">
+            <div class="col-md-3"><input type="text" id="newUName" class="form-control" placeholder="Username" required></div>
+            <div class="col-md-3"><input type="password" id="newUPass" class="form-control" placeholder="Password" required></div>
+            <div class="col-md-4">
+                <select id="newURole" class="form-select">
+                    <option value="Student">Student</option>
+                    <option value="PhD Student">PhD Student</option>
+                    <option value="Post-Doc">Post-Doc</option>
+                    <option value="Lab Supervisor">Lab Supervisor</option>
+                    <option value="Admin">Admin</option>
+                </select>
+            </div>
+            <div class="col-md-2"><button type="submit" class="btn btn-primary w-100">Add</button></div>
+        </form>
+        <table class="table table-sm table-bordered">
+            <thead class="table-dark"><tr><th>Username</th><th>Role</th><th>Action</th></tr></thead>
+            <tbody id="usersBody"></tbody>
+        </table>
       </div>
     </div>
   </div>
 </div>
 
+<!-- Export Modal -->
 <div class="modal fade" id="exportModal" tabindex="-1">
   <div class="modal-dialog modal-sm">
     <div class="modal-content">
