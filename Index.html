@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dr. Nimmi Das Lab - Purchase Management</title>
+    <!-- Using Bootstrap for instant professional styling -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { padding: 20px; background-color: #f8f9fa; }
+        .table-responsive { background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        th { white-space: nowrap; }
+        .specs-col { min-width: 250px; }
+    </style>
+</head>
+<body>
+
+<div class="container-fluid">
+    <h2 class="mb-4">Dr. Nimmi Das Lab - Purchase Management</h2>
+    
+    <div class="row mb-3">
+        <div class="col-md-3">
+            <input type="date" id="dateSelector" class="form-control" title="Select List Date">
+        </div>
+        <div class="col-md-3">
+            <button class="btn btn-primary" onclick="loadTableData()">Load Data</button>
+        </div>
+        <div class="col-md-6 text-end">
+            <input type="text" id="searchInput" class="form-control d-inline-block w-50" placeholder="Search by Product Name/Code...">
+        </div>
+    </div>
+
+    <!-- Data Entry Form -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <h5 class="card-title">Add New Product</h5>
+            <form id="purchaseForm" class="row g-3">
+                <div class="col-md-2"><input type="text" id="pCode" class="form-control" placeholder="Product Code" required></div>
+                <div class="col-md-3"><input type="text" id="pName" class="form-control" placeholder="Product Name" required></div>
+                <div class="col-md-2"><input type="text" id="pCompany" class="form-control" placeholder="Company"></div>
+                <div class="col-md-5"><input type="text" id="pSpecs" class="form-control" placeholder="Company Specs"></div>
+                <div class="col-md-2"><input type="number" id="pCompPrice" class="form-control" placeholder="Est. Price"></div>
+                <div class="col-md-2"><input type="number" id="pQty" class="form-control" placeholder="Qty" required></div>
+                <div class="col-md-2"><input type="text" id="pUnit" class="form-control" placeholder="Unit (e.g. Box)"></div>
+                <div class="col-md-2"><button type="submit" class="btn btn-success w-100">Save to Sheet</button></div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Table -->
+    <div class="table-responsive">
+        <table class="table table-bordered table-hover" id="purchaseTable">
+            <thead class="table-dark">
+                <tr>
+                    <th>SL No</th>
+                    <th>Product Code</th>
+                    <th>Product Name</th>
+                    <th>Company</th>
+                    <th class="specs-col">Company Specs</th>
+                    <th>Company Price</th>
+                    <th>Qty</th>
+                    <th>Unit</th>
+                    <th>Final Price</th>
+                    <th>Vendor</th>
+                </tr>
+            </thead>
+            <tbody id="tableBody">
+                <!-- Rows will be injected here via JavaScript -->
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+    // PASTE YOUR GOOGLE APPS SCRIPT WEB APP URL HERE
+    const API_URL = "https://script.google.com/macros/s/AKfycbwet17KJDzMQl0FlMOaqB8M0otVWCckd9DEnq4vlnvmOHRix1HBNaYpaVRtxYM6r2Y/exec";
+    
+    // Set today's date on load
+    document.getElementById('dateSelector').valueAsDate = new Date();
+
+    // Load data from Google Sheets
+    async function loadTableData() {
+        const sheetName = document.getElementById('dateSelector').value;
+        const tbody = document.getElementById('tableBody');
+        tbody.innerHTML = '<tr><td colspan="10" class="text-center">Loading data from Google Sheets...</td></tr>';
+
+        try {
+            const response = await fetch(`${API_URL}?sheetName=${sheetName}`);
+            const data = await response.json();
+            
+            tbody.innerHTML = '';
+            if (data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="10" class="text-center">No records found for this date.</td></tr>';
+                return;
+            }
+
+            data.forEach((row, index) => {
+                tbody.innerHTML += `
+                    <tr>
+                        <td>${index + 1}</td>
+                        <td>${row['Product Code'] || ''}</td>
+                        <td>${row['Product Name'] || ''}</td>
+                        <td>${row['Company'] || ''}</td>
+                        <td>${row['Company Specs'] || ''}</td>
+                        <td>${row['Company Price'] || ''}</td>
+                        <td>${row['Qty'] || ''}</td>
+                        <td>${row['Unit'] || ''}</td>
+                        <td>${row['Price'] || ''}</td>
+                        <td>${row['Vendor'] || ''}</td>
+                    </tr>
+                `;
+            });
+        } catch (error) {
+            console.error('Error loading data:', error);
+            tbody.innerHTML = '<tr><td colspan="10" class="text-center text-danger">Failed to load data. Check URL and permissions.</td></tr>';
+        }
+    }
+
+    // Submit new row to Google Sheets
+    document.getElementById('purchaseForm').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        const btn = e.target.querySelector('button[type="submit"]');
+        btn.innerText = 'Saving...';
+        btn.disabled = true;
+
+        const payload = {
+            sheetName: document.getElementById('dateSelector').value,
+            slNo: document.getElementById('tableBody').children.length + 1,
+            code: document.getElementById('pCode').value,
+            name: document.getElementById('pName').value,
+            company: document.getElementById('pCompany').value,
+            specs: document.getElementById('pSpecs').value,
+            compPrice: document.getElementById('pCompPrice').value,
+            qty: document.getElementById('pQty').value,
+            unit: document.getElementById('pUnit').value,
+            price: "", // Final price filled by vendors later
+            vendor: ""
+        };
+
+        try {
+            await fetch(API_URL, {
+                method: 'POST',
+                // Using text/plain avoids CORS preflight issues with Google Apps Script
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify(payload)
+            });
+            
+            e.target.reset();
+            loadTableData(); // Refresh table
+        } catch (error) {
+            console.error('Error saving:', error);
+            alert("Failed to save data.");
+        } finally {
+            btn.innerText = 'Save to Sheet';
+            btn.disabled = false;
+        }
+    });
+
+    // Frontend Search/Filter
+    document.getElementById('searchInput').addEventListener('keyup', function() {
+        const filter = this.value.toLowerCase();
+        const rows = document.getElementById('tableBody').getElementsByTagName('tr');
+        
+        for (let i = 0; i < rows.length; i++) {
+            // Check code (col 1) and name (col 2)
+            const code = rows[i].getElementsByTagName('td')[1]?.innerText.toLowerCase() || "";
+            const name = rows[i].getElementsByTagName('td')[2]?.innerText.toLowerCase() || "";
+            
+            if (code.includes(filter) || name.includes(filter)) {
+                rows[i].style.display = "";
+            } else {
+                rows[i].style.display = "none";
+            }
+        }
+    });
+
+    // Initial load
+    loadTableData();
+</script>
+</body>
+</html>
