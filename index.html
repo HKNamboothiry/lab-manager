@@ -4,91 +4,91 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dr. Nimmi Das Lab - Purchase Management</title>
-    <!-- Bootstrap CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
-        body { padding: 20px; background-color: #f8f9fa; }
+        body { background-color: #f8f9fa; }
+        #appContainer { display: none; padding: 20px; } /* Hidden until login */
         
-        /* Table Layout & Scroll settings */
-        .table-responsive { 
-            background: white; 
-            border-radius: 8px; 
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1); 
-            max-height: 60vh; 
-            overflow: auto; 
+        /* Login Screen */
+        #loginScreen {
+            height: 100vh; display: flex; align-items: center; justify-content: center;
+            background: linear-gradient(135deg, #e3f2fd, #bbdefb);
         }
+        .login-card { background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); width: 100%; max-width: 400px; }
         
+        /* Table Layout */
+        .table-responsive { background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); max-height: 55vh; overflow: auto; }
         th { white-space: nowrap; }
         .specs-col { min-width: 300px; }
         
-        /* Freeze Header Top */
+        /* Frozen Columns */
         thead th { position: sticky; top: 0; z-index: 2; }
-
-        /* Freeze Columns 0 to 3 (SL No to Company) */
         .sticky-col-0 { position: sticky; left: 0px;   min-width: 60px;  max-width: 60px;  z-index: 1; }
-        .sticky-col-1 { position: sticky; left: 60px;  min-width: 120px; max-width: 120px; z-index: 1; }
-        .sticky-col-2 { position: sticky; left: 180px; min-width: 250px; max-width: 250px; z-index: 1; }
-        .sticky-col-3 { position: sticky; left: 430px; min-width: 150px; max-width: 150px; z-index: 1; border-right: 2px solid #6c757d; }
+        .sticky-col-1 { position: sticky; left: 60px;  min-width: 110px; max-width: 110px; z-index: 1; }
+        .sticky-col-2 { position: sticky; left: 170px; min-width: 220px; max-width: 220px; z-index: 1; }
+        .sticky-col-3 { position: sticky; left: 390px; min-width: 140px; max-width: 140px; z-index: 1; }
+        .sticky-col-4 { position: sticky; left: 530px; min-width: 140px; max-width: 140px; z-index: 1; border-right: 2px solid #6c757d; }
         
-        /* Ensure frozen headers stay above frozen cells */
-        thead .sticky-col-0, thead .sticky-col-1, thead .sticky-col-2, thead .sticky-col-3 { 
-            z-index: 3 !important; 
-            background-color: #212529 !important; 
-        }
-        
-        /* Frozen cell background matching */
-        tbody tr td.sticky-col-0, tbody tr td.sticky-col-1, tbody tr td.sticky-col-2, tbody tr td.sticky-col-3 {
-            background-color: #ffffff;
-        }
-        tbody tr:hover td.sticky-col-0, tbody tr:hover td.sticky-col-1, tbody tr:hover td.sticky-col-2, tbody tr:hover td.sticky-col-3 {
-            background-color: #ececec;
-        }
+        thead .sticky-col-0, thead .sticky-col-1, thead .sticky-col-2, thead .sticky-col-3, thead .sticky-col-4 { z-index: 3 !important; background-color: #212529 !important; }
+        tbody tr td.sticky-col-0, tbody tr td.sticky-col-1, tbody tr td.sticky-col-2, tbody tr td.sticky-col-3, tbody tr td.sticky-col-4 { background-color: #ffffff; }
+        tbody tr:hover td.sticky-col-0, tbody tr:hover td.sticky-col-1, tbody tr:hover td.sticky-col-2, tbody tr:hover td.sticky-col-3, tbody tr:hover td.sticky-col-4 { background-color: #ececec; }
 
-        /* Budget Box */
-        .budget-box {
-            background-color: #e8f5e9;
-            border: 2px solid #a5d6a7;
-            border-radius: 12px;
-            padding: 20px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-        }
+        .budget-box { background-color: #e8f5e9; border: 2px solid #a5d6a7; border-radius: 12px; padding: 20px; }
     </style>
 </head>
 <body>
 
-<div class="container-fluid">
-    <h2 class="mb-4">Dr. Nimmi Das Lab - Purchase Management</h2>
+<!-- Authentication Screen -->
+<div id="loginScreen">
+    <div class="login-card text-center">
+        <h4 class="mb-4">Dr. Nimmi Das Lab<br><small class="text-muted">Purchase Portal</small></h4>
+        <div class="mb-3">
+            <input type="text" id="username" class="form-control" placeholder="Username">
+        </div>
+        <div class="mb-3">
+            <input type="password" id="password" class="form-control" placeholder="Password">
+        </div>
+        <button id="loginBtn" class="btn btn-primary w-100" onclick="verifyLogin()">Login</button>
+        <p id="loginError" class="text-danger mt-2" style="display:none;">Invalid credentials</p>
+    </div>
+</div>
+
+<!-- Main Application (Hidden by default) -->
+<div id="appContainer" class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>Dr. Nimmi Das Lab - Purchase Management</h2>
+        <button class="btn btn-outline-danger btn-sm" onclick="logout()">Logout</button>
+    </div>
     
     <div class="row mb-3">
-        <div class="col-md-3">
-            <input type="date" id="dateSelector" class="form-control" title="Select List Date">
-        </div>
-        <div class="col-md-2">
-            <button class="btn btn-primary w-100" onclick="loadTableData()">Load Data</button>
-        </div>
-        <div class="col-md-7 text-end">
-            <input type="text" id="searchInput" class="form-control d-inline-block w-50" placeholder="Filter current view..." autocomplete="off">
-        </div>
+        <div class="col-md-3"><input type="date" id="dateSelector" class="form-control" title="Select List Date"></div>
+        <div class="col-md-2"><button class="btn btn-primary w-100" onclick="loadTableData()">Load Data</button></div>
+        <div class="col-md-7 text-end"><input type="text" id="searchInput" class="form-control d-inline-block w-50" placeholder="Filter current view..."></div>
     </div>
 
-    <!-- Data Entry Form (Autofill Restricted) -->
+    <!-- Data Entry Form -->
     <div class="card mb-4">
         <div class="card-body">
             <div class="d-flex justify-content-between align-items-center mb-3">
                 <h5 class="card-title mb-0">Add New Product</h5>
-                <button type="button" class="btn btn-outline-primary btn-sm" onclick="openSearchModal()">
-                    🔍 Search History & Auto-Fill
-                </button>
+                <button type="button" class="btn btn-outline-primary btn-sm" onclick="openSearchModal()">🔍 Search History</button>
             </div>
             
             <form id="purchaseForm" class="row g-3" autocomplete="off">
-                <!-- autocomplete="new-password" forces strict browsers to ignore autofill -->
-                <div class="col-md-2"><input type="text" id="pCode" class="form-control" placeholder="Product Code" autocomplete="new-password" required></div>
-                <div class="col-md-3"><input type="text" id="pName" class="form-control" placeholder="Product Name" autocomplete="new-password" required></div>
-                <div class="col-md-2"><input type="text" id="pCompany" class="form-control" placeholder="Company" autocomplete="new-password"></div>
-                <div class="col-md-5"><input type="text" id="pSpecs" class="form-control" placeholder="Company Specs" autocomplete="new-password"></div>
-                <div class="col-md-2"><input type="number" id="pQty" class="form-control" placeholder="Qty" autocomplete="new-password" required></div>
-                <div class="col-md-2"><input type="text" id="pUnit" class="form-control" placeholder="Unit (e.g. Box)" autocomplete="new-password"></div>
+                <!-- DataLists for dynamic dropdown filtering -->
+                <datalist id="categoryList"></datalist>
+                <datalist id="nameList"></datalist>
+                <datalist id="companyList"></datalist>
+                <datalist id="specsList"></datalist>
+                <datalist id="unitList"></datalist>
+
+                <div class="col-md-2"><input type="text" id="pCode" class="form-control" placeholder="Code (Press Enter)" autocomplete="new-password" required></div>
+                <div class="col-md-2"><input type="text" id="pCategory" class="form-control" placeholder="Category" list="categoryList" autocomplete="new-password"></div>
+                <div class="col-md-3"><input type="text" id="pName" class="form-control" placeholder="Product Name" list="nameList" autocomplete="new-password" required></div>
+                <div class="col-md-2"><input type="text" id="pCompany" class="form-control" placeholder="Company" list="companyList" autocomplete="new-password"></div>
+                <div class="col-md-3"><input type="text" id="pSpecs" class="form-control" placeholder="Company Specs" list="specsList" autocomplete="new-password"></div>
+                <div class="col-md-1"><input type="number" id="pQty" class="form-control" placeholder="Qty" autocomplete="new-password" required></div>
+                <div class="col-md-1"><input type="text" id="pUnit" class="form-control" placeholder="Unit" list="unitList" autocomplete="new-password"></div>
                 <div class="col-md-2"><input type="number" step="0.01" id="pCompPrice" class="form-control" placeholder="Est. Price (₹)" autocomplete="new-password"></div>
                 <div class="col-md-2 ms-auto"><button type="submit" class="btn btn-success w-100">Save to Sheet</button></div>
             </form>
@@ -103,7 +103,8 @@
                     <th class="sticky-col-0">SL No</th>
                     <th class="sticky-col-1">Product Code</th>
                     <th class="sticky-col-2">Product Name</th>
-                    <th class="sticky-col-3">Company</th>
+                    <th class="sticky-col-3">Category</th>
+                    <th class="sticky-col-4">Company</th>
                     <th class="specs-col">Company Specs</th>
                     <th>Qty</th>
                     <th>Unit</th>
@@ -112,23 +113,20 @@
                     <th>Vendor</th>
                 </tr>
             </thead>
-            <tbody id="tableBody">
-                <!-- Rows injected here -->
-            </tbody>
+            <tbody id="tableBody"></tbody>
         </table>
     </div>
 
-    <!-- Budget Calculator Box -->
+    <!-- Budget Box -->
     <div class="budget-box mb-5">
         <div class="row align-items-center text-center">
             <div class="col-md-4 border-end border-success">
                 <h6 class="text-success mb-2">Total Budget Required</h6>
                 <h3 id="totalBudget" class="text-dark fw-bold">₹0.00</h3>
-                <small class="text-muted">Based on Final Price (or Est. Price)</small>
             </div>
             <div class="col-md-4 border-end border-success">
                 <h6 class="text-success mb-2">Budget In Hand (₹)</h6>
-                <input type="number" class="form-control text-center fs-5 mx-auto" id="budgetInHand" style="max-width: 200px;" placeholder="Enter Amount" autocomplete="off">
+                <input type="number" class="form-control text-center fs-5 mx-auto" id="budgetInHand" style="max-width: 200px;">
             </div>
             <div class="col-md-4">
                 <h6 class="text-success mb-2">Status / Balance</h6>
@@ -138,142 +136,220 @@
     </div>
 </div>
 
-<!-- Search History Modal -->
-<div class="modal fade" id="searchModal" tabindex="-1" aria-hidden="true">
+<!-- Search Modal -->
+<div class="modal fade" id="searchModal" tabindex="-1">
   <div class="modal-dialog modal-lg modal-dialog-scrollable">
     <div class="modal-content">
       <div class="modal-header bg-light">
         <h5 class="modal-title">Select from Database</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
-        <input type="text" id="modalSearchInput" class="form-control mb-3" placeholder="Search by Code, Name, or Company..." autocomplete="off">
-        <div class="list-group" id="modalProductList">
-          <!-- DB items injected here -->
-        </div>
+        <input type="text" id="modalSearchInput" class="form-control mb-3" placeholder="Search Database...">
+        <div class="list-group" id="modalProductList"></div>
       </div>
     </div>
   </div>
 </div>
 
-<!-- Bootstrap Bundle JS -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-
 <script>
-    // Updated Web App URL
     const API_URL = "https://script.google.com/macros/s/AKfycbwet17KJDzMQl0FlMOaqB8M0otVWCckd9DEnq4vlnvmOHRix1HBNaYpaVRtxYM6r2Y/exec";
     
-    let productDatabase = {};
-    document.getElementById('dateSelector').valueAsDate = new Date();
+    // Check login state on load
+    if (sessionStorage.getItem("isLoggedIn") === "true") {
+        document.getElementById('loginScreen').style.display = 'none';
+        document.getElementById('appContainer').style.display = 'block';
+        initializeApp();
+    }
 
-    // 1. Fetch Product DB securely
+    // Backend-driven authentication
+    async function verifyLogin() {
+        const user = document.getElementById('username').value.trim();
+        const pass = document.getElementById('password').value;
+        const btn = document.getElementById('loginBtn');
+        const err = document.getElementById('loginError');
+
+        if (!user || !pass) return;
+
+        btn.innerText = "Verifying...";
+        btn.disabled = true;
+        err.style.display = 'none';
+
+        try {
+            const response = await fetch(API_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify({
+                    action: "login",
+                    username: user,
+                    password: pass
+                })
+            });
+            
+            const result = await response.json();
+
+            if (result.status === "success") {
+                sessionStorage.setItem("isLoggedIn", "true");
+                document.getElementById('loginScreen').style.display = 'none';
+                document.getElementById('appContainer').style.display = 'block';
+                initializeApp();
+            } else {
+                err.innerText = "Invalid credentials";
+                err.style.display = 'block';
+            }
+        } catch (error) {
+            err.innerText = "Connection error. Try again.";
+            err.style.display = 'block';
+        } finally {
+            btn.innerText = "Login";
+            btn.disabled = false;
+        }
+    }
+
+    function logout() {
+        sessionStorage.removeItem("isLoggedIn");
+        location.reload();
+    }
+
+    // --- MAIN APP LOGIC ---
+    let productDatabase = {};
+
+    function initializeApp() {
+        document.getElementById('dateSelector').valueAsDate = new Date();
+        loadProductDB();
+        loadTableData();
+    }
+
     async function loadProductDB() {
         try {
             const response = await fetch(`${API_URL}?action=getProducts`);
             productDatabase = await response.json();
-        } catch (error) {
-            console.error("Failed to load product database", error);
-        }
+            updateDatalists(); // Populate dropdowns initially
+        } catch (error) { console.error("Failed to load product DB"); }
     }
-    loadProductDB();
 
-    // 2. Load Daily Table Data
-    async function loadTableData() {
-        const sheetName = document.getElementById('dateSelector').value;
-        const tbody = document.getElementById('tableBody');
-        tbody.innerHTML = '<tr><td colspan="10" class="text-center py-4">Loading data from Google Sheets...</td></tr>';
-
-        try {
-            const response = await fetch(`${API_URL}?sheetName=${sheetName}`);
-            const data = await response.json();
+    // Dynamic Category Filtering for Dropdowns
+    function updateDatalists() {
+        const selectedCat = document.getElementById('pCategory').value.toLowerCase().trim();
+        const cats = new Set(), names = new Set(), companies = new Set(), specs = new Set(), units = new Set();
+        
+        for (const [code, p] of Object.entries(productDatabase)) {
+            if (p.category) cats.add(p.category);
             
-            tbody.innerHTML = '';
-            if (data.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="10" class="text-center py-4">No records found for this date.</td></tr>';
-                calculateBudget(0);
-                return;
+            // If no category is typed, show everything. If category is typed, only show items in that category.
+            if (!selectedCat || (p.category && p.category.toLowerCase() === selectedCat)) {
+                if (p.name) names.add(p.name);
+                if (p.company) companies.add(p.company);
+                if (p.specs) specs.add(p.specs);
+                if (p.unit) units.add(p.unit);
             }
-
-            data.forEach((row, index) => {
-                // Reordered mapping to keep Qty/Unit before the Prices
-                tbody.innerHTML += `
-                    <tr>
-                        <td class="sticky-col-0">${index + 1}</td>
-                        <td class="sticky-col-1 fw-bold">${row['Product Code'] || ''}</td>
-                        <td class="sticky-col-2 text-wrap">${row['Product Name'] || ''}</td>
-                        <td class="sticky-col-3">${row['Company'] || ''}</td>
-                        <td class="text-wrap">${row['Company Specs'] || ''}</td>
-                        <td class="text-center">${row['Qty'] || ''}</td>
-                        <td class="text-center">${row['Unit'] || ''}</td>
-                        <td>${row['Company Price'] || ''}</td>
-                        <td class="fw-bold">${row['Price'] || ''}</td>
-                        <td>${row['Vendor'] || ''}</td>
-                    </tr>
-                `;
-            });
-            
-            calculateBudget();
-        } catch (error) {
-            tbody.innerHTML = '<tr><td colspan="10" class="text-center text-danger py-4">Failed to load data.</td></tr>';
         }
+        
+        populateList('categoryList', cats);
+        populateList('nameList', names);
+        populateList('companyList', companies);
+        populateList('specsList', specs);
+        populateList('unitList', units);
+    }
+    
+    function populateList(id, set) {
+        document.getElementById(id).innerHTML = Array.from(set).map(val => `<option value="${val}">`).join('');
     }
 
-    // 3. Save New Item
+    // Re-filter dropdowns when Category changes
+    document.getElementById('pCategory').addEventListener('input', updateDatalists);
+
+    // Auto-fill when pressing ENTER on Product Code
+    document.getElementById('pCode').addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault(); // Prevent form submission
+            const code = this.value.trim();
+            if (productDatabase[code]) {
+                document.getElementById('pCategory').value = productDatabase[code].category || "";
+                document.getElementById('pName').value = productDatabase[code].name || "";
+                document.getElementById('pCompany').value = productDatabase[code].company || "";
+                document.getElementById('pSpecs').value = productDatabase[code].specs || "";
+                document.getElementById('pCompPrice').value = productDatabase[code].compPrice || "";
+                document.getElementById('pUnit').value = productDatabase[code].unit || "";
+                document.getElementById('pQty').focus(); // Jump to Qty box
+            }
+        }
+    });
+
+    // Save Data
     document.getElementById('purchaseForm').addEventListener('submit', async function(e) {
         e.preventDefault();
         const btn = e.target.querySelector('button[type="submit"]');
-        btn.innerText = 'Saving...';
-        btn.disabled = true;
+        btn.innerText = 'Saving...'; btn.disabled = true;
 
         const payload = {
             sheetName: document.getElementById('dateSelector').value,
             slNo: document.getElementById('tableBody').children.length + 1,
             code: document.getElementById('pCode').value,
             name: document.getElementById('pName').value,
+            category: document.getElementById('pCategory').value,
             company: document.getElementById('pCompany').value,
             specs: document.getElementById('pSpecs').value,
             qty: document.getElementById('pQty').value,
             unit: document.getElementById('pUnit').value,
             compPrice: document.getElementById('pCompPrice').value,
-            price: "", // Final price populated later
-            vendor: ""
+            price: "", vendor: ""
         };
 
         try {
-            await fetch(API_URL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                body: JSON.stringify(payload)
-            });
+            await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(payload) });
             e.target.reset();
             loadTableData(); 
-            loadProductDB(); // Refresh DB in background just in case
-        } catch (error) {
-            alert("Failed to save data.");
-        } finally {
-            btn.innerText = 'Save to Sheet';
-            btn.disabled = false;
-        }
+            loadProductDB();
+        } catch (error) { alert("Failed to save data."); } 
+        finally { btn.innerText = 'Save to Sheet'; btn.disabled = false; }
     });
 
-    // 4. Budget Calculation Logic
+    // Load Daily Data
+    async function loadTableData() {
+        const sheetName = document.getElementById('dateSelector').value;
+        const tbody = document.getElementById('tableBody');
+        tbody.innerHTML = '<tr><td colspan="11" class="text-center py-4">Loading...</td></tr>';
+
+        try {
+            const response = await fetch(`${API_URL}?sheetName=${sheetName}`);
+            const data = await response.json();
+            
+            tbody.innerHTML = '';
+            if (data.length === 0) { tbody.innerHTML = '<tr><td colspan="11" class="text-center py-4">No records found.</td></tr>'; calculateBudget(); return; }
+
+            data.forEach((row, i) => {
+                tbody.innerHTML += `
+                    <tr>
+                        <td class="sticky-col-0">${i + 1}</td>
+                        <td class="sticky-col-1 fw-bold">${row['Product Code'] || ''}</td>
+                        <td class="sticky-col-2 text-wrap">${row['Product Name'] || ''}</td>
+                        <td class="sticky-col-3">${row['Category'] || ''}</td>
+                        <td class="sticky-col-4">${row['Company'] || ''}</td>
+                        <td class="text-wrap">${row['Company Specs'] || ''}</td>
+                        <td class="text-center">${row['Qty'] || ''}</td>
+                        <td class="text-center">${row['Unit'] || ''}</td>
+                        <td>${row['Company Price'] || ''}</td>
+                        <td class="fw-bold">${row['Price'] || ''}</td>
+                        <td>${row['Vendor'] || ''}</td>
+                    </tr>`;
+            });
+            calculateBudget();
+        } catch (error) { tbody.innerHTML = '<tr><td colspan="11" class="text-center text-danger py-4">Failed to load data.</td></tr>'; }
+    }
+
+    // Budget Engine
     function calculateBudget() {
         let total = 0;
         const rows = document.getElementById('tableBody').getElementsByTagName('tr');
-        
         for(let i=0; i<rows.length; i++) {
             const cells = rows[i].getElementsByTagName('td');
-            if(cells.length < 10) continue; // Skip "Loading..." row
-            
-            const qty = parseFloat(cells[5].innerText) || 0;
-            let finalPrice = parseFloat(cells[8].innerText);
-            let compPrice = parseFloat(cells[7].innerText);
-            
-            // Prioritize Final Vendor Price. If empty, use Company Price.
-            let activePrice = !isNaN(finalPrice) ? finalPrice : (!isNaN(compPrice) ? compPrice : 0);
-            total += (qty * activePrice);
+            if(cells.length < 11) continue;
+            const qty = parseFloat(cells[6].innerText) || 0;
+            const price = !isNaN(parseFloat(cells[9].innerText)) ? parseFloat(cells[9].innerText) : (!isNaN(parseFloat(cells[8].innerText)) ? parseFloat(cells[8].innerText) : 0);
+            total += (qty * price);
         }
-        
         document.getElementById('totalBudget').innerText = '₹' + total.toFixed(2);
         updateBalance();
     }
@@ -284,90 +360,58 @@
         const balance = inHand - total;
         const balanceEl = document.getElementById('budgetBalance');
         
-        if (balance < 0) {
-            balanceEl.innerHTML = `<span class="text-danger">Shortage: ₹${Math.abs(balance).toFixed(2)}</span>`;
-        } else if (inHand > 0) {
-            balanceEl.innerHTML = `<span class="text-primary">Remaining: ₹${balance.toFixed(2)}</span>`;
-        } else {
-            balanceEl.innerHTML = `<span class="text-dark">₹0.00</span>`;
-        }
+        if (balance < 0) balanceEl.innerHTML = `<span class="text-danger">Shortage: ₹${Math.abs(balance).toFixed(2)}</span>`;
+        else if (inHand > 0) balanceEl.innerHTML = `<span class="text-primary">Remaining: ₹${balance.toFixed(2)}</span>`;
+        else balanceEl.innerHTML = `<span class="text-dark">₹0.00</span>`;
     }
     document.getElementById('budgetInHand').addEventListener('input', updateBalance);
 
-    // 5. Search Modal Logic
+    // Search History Modal
     function openSearchModal() {
         const listDiv = document.getElementById('modalProductList');
         listDiv.innerHTML = '';
-        const searchModal = new bootstrap.Modal(document.getElementById('searchModal'));
-        
-        // Populate modal list from database
+        new bootstrap.Modal(document.getElementById('searchModal')).show();
         for (const [code, details] of Object.entries(productDatabase)) {
             listDiv.innerHTML += `
                 <button type="button" class="list-group-item list-group-item-action py-3" onclick="selectProduct('${code}')">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <div>
-                            <h6 class="mb-1 text-primary">${code}</h6>
-                            <strong class="mb-1">${details.name}</strong>
-                            <p class="mb-0 text-muted small">${details.specs || 'No specs'}</p>
-                        </div>
-                        <div class="text-end">
-                            <span class="badge bg-secondary mb-1">${details.company || 'N/A'}</span><br>
-                            <span class="text-success fw-bold">₹${details.compPrice || '0.00'}</span>
-                        </div>
+                    <div class="d-flex justify-content-between">
+                        <div><h6 class="text-primary mb-1">${code}</h6><strong>${details.name}</strong><br><small class="text-muted">${details.category || 'Uncategorized'}</small></div>
+                        <div class="text-end"><span class="badge bg-secondary">${details.company || 'N/A'}</span><br><span class="text-success fw-bold">₹${details.compPrice || '0'}</span></div>
                     </div>
-                </button>
-            `;
+                </button>`;
         }
-        searchModal.show();
     }
 
-    // Modal Live Filter
-    document.getElementById('modalSearchInput').addEventListener('keyup', function() {
-        const filter = this.value.toLowerCase();
-        const items = document.getElementById('modalProductList').getElementsByTagName('button');
-        
-        for(let i=0; i<items.length; i++) {
-            if(items[i].innerText.toLowerCase().includes(filter)) {
-                items[i].style.display = "";
-            } else {
-                items[i].style.display = "none";
-            }
-        }
-    });
-
-    // Populate Form from Modal
     function selectProduct(code) {
         if(productDatabase[code]) {
             document.getElementById('pCode').value = code;
+            document.getElementById('pCategory').value = productDatabase[code].category || "";
             document.getElementById('pName').value = productDatabase[code].name || "";
             document.getElementById('pCompany').value = productDatabase[code].company || "";
             document.getElementById('pSpecs').value = productDatabase[code].specs || "";
             document.getElementById('pCompPrice').value = productDatabase[code].compPrice || "";
-            
-            // Auto-focus the Quantity box for rapid entry
+            document.getElementById('pUnit').value = productDatabase[code].unit || "";
             document.getElementById('pQty').focus();
         }
-        // Close modal
         bootstrap.Modal.getInstance(document.getElementById('searchModal')).hide();
-        document.getElementById('modalSearchInput').value = ""; // Reset search
     }
 
-    // Main Table Live Filter
-    document.getElementById('searchInput').addEventListener('keyup', function() {
-        const filter = this.value.toLowerCase();
-        const rows = document.getElementById('tableBody').getElementsByTagName('tr');
-        
-        for (let i = 0; i < rows.length; i++) {
-            const cells = rows[i].getElementsByTagName('td');
-            if(cells.length < 10) continue;
-            
-            const textContent = (cells[1].innerText + " " + cells[2].innerText + " " + cells[3].innerText).toLowerCase();
-            rows[i].style.display = textContent.includes(filter) ? "" : "none";
-        }
+    // Modal & Table Search filtering
+    document.getElementById('modalSearchInput').addEventListener('keyup', function() {
+        const f = this.value.toLowerCase();
+        const items = document.getElementById('modalProductList').getElementsByTagName('button');
+        for(let i=0; i<items.length; i++) items[i].style.display = items[i].innerText.toLowerCase().includes(f) ? "" : "none";
     });
 
-    // Initial table load
-    loadTableData();
+    document.getElementById('searchInput').addEventListener('keyup', function() {
+        const f = this.value.toLowerCase();
+        const rows = document.getElementById('tableBody').getElementsByTagName('tr');
+        for (let i=0; i<rows.length; i++) {
+            const cells = rows[i].getElementsByTagName('td');
+            if(cells.length < 11) continue;
+            rows[i].style.display = (cells[1].innerText + cells[2].innerText + cells[3].innerText + cells[4].innerText).toLowerCase().includes(f) ? "" : "none";
+        }
+    });
 </script>
 </body>
 </html>
