@@ -468,11 +468,9 @@ function manageList() {
     document.getElementById('listRename').value = lName;
     document.getElementById('listCollabs').value = meta.collabs.join(',');
     
-    if (USER.role === "Admin" || USER.role === "Lab Supervisor" || meta.owner === USER.username) {
-        document.getElementById('listRename').disabled = false;
-    } else {
-        document.getElementById('listRename').disabled = true;
-    }
+    if (USER.role === "Admin" || USER.role === "Lab Supervisor" || meta.owner === USER.username) document.getElementById('listRename').disabled = false;
+    else document.getElementById('listRename').disabled = true;
+    
     new bootstrap.Modal(document.getElementById('listModal')).show();
 }
 
@@ -508,15 +506,19 @@ async function saveListSettings() {
     fetchInitData();
 }
 
+// -- Inventory Management --
 function openInventoryModal() {
     const tbody = document.getElementById('invBody');
     tbody.innerHTML = '';
     for(const [code, p] of Object.entries(productDB)) {
         let actionBtns = `<button class="btn btn-sm btn-outline-success py-0 px-1 me-1 text-nowrap" onclick="addFromInventory('${code}')" title="Add to List"><i class="bi bi-plus-circle"></i> Add</button>`;
+        
         if (USER.role === "Admin" || USER.role === "Lab Supervisor") {
             actionBtns += `<button class="btn btn-sm btn-outline-warning py-0 px-1" onclick="openEditProduct('${code}')" title="Edit"><i class="bi bi-pencil-square"></i></button>
                    <button class="btn btn-sm btn-outline-danger py-0 px-1 ms-1" onclick="deleteProduct('${code}')" title="Delete"><i class="bi bi-trash"></i></button>`;
-        } else actionBtns += `<span class="text-muted small ms-1">View Only</span>`;
+        } else {
+            actionBtns += `<span class="text-muted small ms-1">View Only</span>`;
+        }
         tbody.innerHTML += `<tr><td>${code}</td><td class="text-wrap" style="min-width:150px;">${p.name}</td><td>${p.category||''}</td><td>${p.company||''}</td><td class="text-wrap" style="min-width:200px;">${p.specs||''}</td><td>${p.minQty||1}</td><td>${p.unit||''}</td><td>${p.compPrice||''}</td><td class="text-center text-nowrap">${actionBtns}</td></tr>`;
     }
     new bootstrap.Modal(document.getElementById('inventoryModal')).show();
@@ -543,6 +545,7 @@ function addFromInventory(code) {
     const tContainer = document.querySelector('.table-responsive'); tContainer.scrollTop = tContainer.scrollHeight;
 }
 
+// FIXED: Explicitly await Data Refresh and re-open modal
 function openEditProduct(code) {
     const p = productDB[code];
     document.getElementById('editOrigCode').value = code;
@@ -560,22 +563,34 @@ function openEditProduct(code) {
 }
 
 async function submitProductEdit() {
+    const btn = document.querySelector('#fullEditModal .btn-success');
+    btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Saving...'; 
+    btn.disabled = true;
+
     const code = document.getElementById('editOrigCode').value;
-    await apiPost({
+    const payload = {
         action: "updateProduct", role: USER.role, 
         product: { code: code, name: document.getElementById('editName').value, category: document.getElementById('editCat').value, company: document.getElementById('editComp').value, specs: document.getElementById('editSpecs').value, compPrice: document.getElementById('editPrice').value, minQty: document.getElementById('editMin').value, unit: document.getElementById('editUnit').value }
-    });
+    };
+    
+    await apiPost(payload);
+    await fetchInitData(); // Wait for data to sync locally
+    
     bootstrap.Modal.getInstance(document.getElementById('fullEditModal')).hide();
-    fetchInitData(); 
+    openInventoryModal(); // Force visual refresh of inventory
+    
+    btn.innerHTML = '<i class="bi bi-floppy"></i> Save Info'; 
+    btn.disabled = false;
 }
 
 async function deleteProduct(code) {
     if(confirm(`Are you sure you want to delete Product Code: ${code} from the inventory?`)) {
         await apiPost({action: "deleteProduct", role: USER.role, code: code});
-        fetchInitData(); 
-        bootstrap.Modal.getInstance(document.getElementById('inventoryModal')).hide();
+        await fetchInitData(); 
+        openInventoryModal(); // Force visual refresh
     }
 }
+
 document.getElementById('invSearch').addEventListener('keyup', function() {
     const f = this.value.toLowerCase();
     const rows = document.getElementById('invBody').getElementsByTagName('tr');
