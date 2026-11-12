@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" data-bs-theme="light">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -13,7 +13,6 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
     
     <style>
-        /* Dynamic Theme Variables */
         :root { 
             --glass-bg: rgba(255, 255, 255, 0.7); 
             --glass-bottom-bg: rgba(232, 245, 233, 0.8);
@@ -24,22 +23,12 @@
             --cell-bg: #ffffff;
             --cell-hover: #ececec;
         }
-        
-        [data-bs-theme="dark"] {
-            --glass-bg: rgba(33, 37, 41, 0.85); 
-            --glass-bottom-bg: rgba(20, 60, 30, 0.8);
-            --body-grad: linear-gradient(135deg, #121212 0%, #2b2b2b 100%);
-            --login-grad: linear-gradient(135deg, #0f2027, #203a43);
-            --login-card-bg: rgba(33, 37, 41, 0.8);
-            --cell-bg: #212529;
-            --cell-hover: #2c3034;
-        }
 
-        body { background: var(--body-grad); font-size: 0.95rem; min-height: 100vh; margin: 0; transition: background 0.3s ease;}
-        #appContainer { display: none; padding-bottom: 90px;} 
+        body { background: var(--body-grad); font-size: 0.95rem; min-height: 100vh; margin: 0; }
+        #appContainer { display: none; padding-bottom: 90px; } 
         
         /* Glassmorphism Login Background */
-        .login-wrapper { position: relative; height: 100vh; display: flex; align-items: center; justify-content: center; overflow: hidden; background: var(--login-grad); transition: background 0.3s ease;}
+        .login-wrapper { position: relative; height: 100vh; display: flex; align-items: center; justify-content: center; overflow: hidden; background: var(--login-grad); }
         .shape-1 { position: absolute; top: -50px; left: -50px; width: 400px; height: 400px; background: rgba(100, 150, 250, 0.4); border-radius: 50%; filter: blur(60px); z-index: 1;}
         .shape-2 { position: absolute; bottom: -50px; right: -50px; width: 400px; height: 400px; background: rgba(250, 100, 150, 0.3); border-radius: 50%; filter: blur(70px); z-index: 1;}
         .login-card { position: relative; z-index: 2; background: var(--login-card-bg); backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur); border: 1px solid rgba(255,255,255,0.2); padding: 40px; border-radius: 16px; box-shadow: 0 8px 32px rgba(0,0,0,0.1); width: 100%; max-width: 400px; }
@@ -56,7 +45,7 @@
         .name-col { min-width: 200px; }
         
         /* Frozen Columns */
-        thead th { position: sticky; top: 0; z-index: 2; background-color: #1a1d20 !important; color: white;}
+        thead th { position: sticky; top: 0; z-index: 2; background-color: #212529 !important; color: white;}
         .sticky-col-0 { position: sticky; left: 0px;   min-width: 50px;  max-width: 50px;  z-index: 1; }
         .sticky-col-1 { position: sticky; left: 50px;  min-width: 80px;  max-width: 80px;  z-index: 1; }
         .sticky-col-2 { position: sticky; left: 130px; min-width: 100px; max-width: 100px; z-index: 1; }
@@ -65,15 +54,13 @@
         
         thead .sticky-col-0, thead .sticky-col-1, thead .sticky-col-2, thead .sticky-col-3, thead .sticky-col-4 { z-index: 3 !important; }
         
-        /* Apply dynamic theme variables to frozen cells */
         tbody tr td.sticky-col-0, tbody tr td.sticky-col-1, tbody tr td.sticky-col-2, tbody tr td.sticky-col-3, tbody tr td.sticky-col-4 { background-color: var(--cell-bg); }
         tbody tr:hover td.sticky-col-0, tbody tr:hover td.sticky-col-1, tbody tr:hover td.sticky-col-2, tbody tr:hover td.sticky-col-3, tbody tr:hover td.sticky-col-4 { background-color: var(--cell-hover); }
-        
-        /* Ensure table-warning (edit mode) overwrites the sticky background */
         tbody tr.table-warning td.sticky-col-0, tbody tr.table-warning td.sticky-col-1, tbody tr.table-warning td.sticky-col-2, tbody tr.table-warning td.sticky-col-3, tbody tr.table-warning td.sticky-col-4 { background-color: transparent; }
 
         .number-box { width: 70px; padding: 0.25rem; }
         .vendor-cell { min-width: 150px; }
+        #invTable thead th { position: static; z-index: auto; background-color: #e9ecef !important; color: #000; }
     </style>
 </head>
 <body>
@@ -122,11 +109,6 @@
                 <small class="text-muted" id="uiRole">Role</small>
                 <button class="btn btn-link text-danger p-0" style="font-size:0.8rem; text-decoration:none;" onclick="logout()">Logout</button>
             </div>
-            
-            <!-- Dark Mode Toggle Button -->
-            <button class="btn btn-outline-secondary shadow-sm bg-body ms-2" id="themeToggle" onclick="toggleTheme()" title="Toggle Dark Mode">
-                <i class="bi bi-moon-fill" id="themeIcon"></i>
-            </button>
         </div>
     </nav>
 
@@ -153,7 +135,6 @@
         <div class="table-responsive mb-3 clear-both w-100">
             <table class="table table-bordered table-sm table-hover mb-0" id="purchaseTable">
                 <thead class="table-dark" id="tableHead">
-                    <!-- Dynamic Headers Generated in JS -->
                 </thead>
                 <tbody id="tableBody"></tbody>
             </table>
@@ -181,7 +162,6 @@
     </div>
 </div>
 
-<!-- Modals -->
 <!-- Add Vendor Modal -->
 <div class="modal fade" id="addVendorModal" tabindex="-1">
   <div class="modal-dialog modal-sm">
