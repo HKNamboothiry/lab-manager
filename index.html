@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-bs-theme="light">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -13,29 +13,50 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
     
     <style>
-        :root { --glass-bg: rgba(255, 255, 255, 0.7); --glass-blur: blur(12px); }
-        body { background: linear-gradient(135deg, #fdfbfb 0%, #ebedee 100%); font-size: 0.95rem; min-height: 100vh; margin: 0;}
+        /* Dynamic Theme Variables */
+        :root { 
+            --glass-bg: rgba(255, 255, 255, 0.7); 
+            --glass-bottom-bg: rgba(232, 245, 233, 0.8);
+            --glass-blur: blur(12px); 
+            --body-grad: linear-gradient(135deg, #fdfbfb 0%, #ebedee 100%);
+            --login-grad: linear-gradient(135deg, #e3f2fd, #bbdefb);
+            --login-card-bg: rgba(255, 255, 255, 0.6);
+            --cell-bg: #ffffff;
+            --cell-hover: #ececec;
+        }
+        
+        [data-bs-theme="dark"] {
+            --glass-bg: rgba(33, 37, 41, 0.85); 
+            --glass-bottom-bg: rgba(20, 60, 30, 0.8);
+            --body-grad: linear-gradient(135deg, #121212 0%, #2b2b2b 100%);
+            --login-grad: linear-gradient(135deg, #0f2027, #203a43);
+            --login-card-bg: rgba(33, 37, 41, 0.8);
+            --cell-bg: #212529;
+            --cell-hover: #2c3034;
+        }
+
+        body { background: var(--body-grad); font-size: 0.95rem; min-height: 100vh; margin: 0; transition: background 0.3s ease;}
         #appContainer { display: none; padding-bottom: 90px;} 
         
         /* Glassmorphism Login Background */
-        .login-wrapper { position: relative; height: 100vh; display: flex; align-items: center; justify-content: center; overflow: hidden; background: linear-gradient(135deg, #e3f2fd, #bbdefb); }
+        .login-wrapper { position: relative; height: 100vh; display: flex; align-items: center; justify-content: center; overflow: hidden; background: var(--login-grad); transition: background 0.3s ease;}
         .shape-1 { position: absolute; top: -50px; left: -50px; width: 400px; height: 400px; background: rgba(100, 150, 250, 0.4); border-radius: 50%; filter: blur(60px); z-index: 1;}
         .shape-2 { position: absolute; bottom: -50px; right: -50px; width: 400px; height: 400px; background: rgba(250, 100, 150, 0.3); border-radius: 50%; filter: blur(70px); z-index: 1;}
-        .login-card { position: relative; z-index: 2; background: rgba(255, 255, 255, 0.6); backdrop-filter: blur(15px); -webkit-backdrop-filter: blur(15px); border: 1px solid rgba(255,255,255,0.4); padding: 40px; border-radius: 16px; box-shadow: 0 8px 32px rgba(0,0,0,0.1); width: 100%; max-width: 400px; }
+        .login-card { position: relative; z-index: 2; background: var(--login-card-bg); backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur); border: 1px solid rgba(255,255,255,0.2); padding: 40px; border-radius: 16px; box-shadow: 0 8px 32px rgba(0,0,0,0.1); width: 100%; max-width: 400px; }
         
         /* Fixed Glass Panels */
-        .glass-top { position: sticky; top: 0; z-index: 1040; background: var(--glass-bg) !important; backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur); border-bottom: 1px solid rgba(255,255,255,0.4); box-shadow: 0 4px 6px rgba(0,0,0,0.02); }
-        .glass-bottom { position: fixed; bottom: 0; left: 0; right: 0; z-index: 1040; background: rgba(232, 245, 233, 0.8); backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur); border-top: 1px solid rgba(255,255,255,0.4); padding: 15px; box-shadow: 0 -4px 6px rgba(0,0,0,0.02); margin: 0 !important; }
+        .glass-top { position: sticky; top: 0; z-index: 1040; background: var(--glass-bg) !important; backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur); border-bottom: 1px solid rgba(255,255,255,0.1); box-shadow: 0 4px 6px rgba(0,0,0,0.02); }
+        .glass-bottom { position: fixed; bottom: 0; left: 0; right: 0; z-index: 1040; background: var(--glass-bottom-bg); backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur); border-top: 1px solid rgba(255,255,255,0.1); padding: 15px; box-shadow: 0 -4px 6px rgba(0,0,0,0.02); margin: 0 !important; }
         
-        .nav-user { line-height: 1.2; border-left: 2px solid #ced4da; padding-left: 15px; }
+        .nav-user { line-height: 1.2; border-left: 2px solid #6c757d; padding-left: 15px; }
 
-        .table-responsive { background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); max-height: calc(100vh - 250px); overflow: auto; }
+        .table-responsive { background: var(--cell-bg); border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); max-height: calc(100vh - 250px); overflow: auto; }
         th { white-space: nowrap; }
         .specs-col { min-width: 250px; }
         .name-col { min-width: 200px; }
         
         /* Frozen Columns */
-        thead th { position: sticky; top: 0; z-index: 2; background-color: #212529 !important; color: white;}
+        thead th { position: sticky; top: 0; z-index: 2; background-color: #1a1d20 !important; color: white;}
         .sticky-col-0 { position: sticky; left: 0px;   min-width: 50px;  max-width: 50px;  z-index: 1; }
         .sticky-col-1 { position: sticky; left: 50px;  min-width: 80px;  max-width: 80px;  z-index: 1; }
         .sticky-col-2 { position: sticky; left: 130px; min-width: 100px; max-width: 100px; z-index: 1; }
@@ -43,13 +64,16 @@
         .sticky-col-4 { position: sticky; left: 430px; min-width: 120px; max-width: 120px; z-index: 1; border-right: 2px solid #6c757d; }
         
         thead .sticky-col-0, thead .sticky-col-1, thead .sticky-col-2, thead .sticky-col-3, thead .sticky-col-4 { z-index: 3 !important; }
-        tbody tr td.sticky-col-0, tbody tr td.sticky-col-1, tbody tr td.sticky-col-2, tbody tr td.sticky-col-3, tbody tr td.sticky-col-4 { background-color: #ffffff; }
-        tbody tr:hover td.sticky-col-0, tbody tr:hover td.sticky-col-1, tbody tr:hover td.sticky-col-2, tbody tr:hover td.sticky-col-3, tbody tr:hover td.sticky-col-4 { background-color: #ececec; }
-        tbody tr.table-warning td { background-color: #fff3cd !important; }
+        
+        /* Apply dynamic theme variables to frozen cells */
+        tbody tr td.sticky-col-0, tbody tr td.sticky-col-1, tbody tr td.sticky-col-2, tbody tr td.sticky-col-3, tbody tr td.sticky-col-4 { background-color: var(--cell-bg); }
+        tbody tr:hover td.sticky-col-0, tbody tr:hover td.sticky-col-1, tbody tr:hover td.sticky-col-2, tbody tr:hover td.sticky-col-3, tbody tr:hover td.sticky-col-4 { background-color: var(--cell-hover); }
+        
+        /* Ensure table-warning (edit mode) overwrites the sticky background */
+        tbody tr.table-warning td.sticky-col-0, tbody tr.table-warning td.sticky-col-1, tbody tr.table-warning td.sticky-col-2, tbody tr.table-warning td.sticky-col-3, tbody tr.table-warning td.sticky-col-4 { background-color: transparent; }
 
         .number-box { width: 70px; padding: 0.25rem; }
         .vendor-cell { min-width: 150px; }
-        #invTable thead th { position: static; z-index: auto; background-color: #e9ecef !important; color: #000; }
     </style>
 </head>
 <body>
@@ -59,24 +83,24 @@
     <div class="shape-2"></div>
     <div class="login-card text-center">
         <i class="bi bi-shield-lock-fill text-primary mb-2" style="font-size: 3rem;"></i>
-        <h4 class="mb-4 text-dark fw-bold">Dr. Nimmi Das Lab<br><small class="text-muted fw-normal" style="font-size: 1rem;">Purchase Portal</small></h4>
-        <div class="mb-3"><input type="text" id="username" class="form-control bg-light" placeholder="Username"></div>
-        <div class="mb-3"><input type="password" id="password" class="form-control bg-light" placeholder="Password"></div>
+        <h4 class="mb-4 fw-bold">Dr. Nimmi Das Lab<br><small class="text-muted fw-normal" style="font-size: 1rem;">Purchase Portal</small></h4>
+        <div class="mb-3"><input type="text" id="username" class="form-control" placeholder="Username"></div>
+        <div class="mb-3"><input type="password" id="password" class="form-control" placeholder="Password"></div>
         <button id="loginBtn" class="btn btn-primary w-100 fw-bold" onclick="verifyLogin()">Login</button>
         <p id="loginError" class="text-danger mt-2 fw-bold" style="display:none;"></p>
     </div>
 </div>
 
 <div id="appContainer">
-    <nav class="navbar navbar-expand-lg navbar-light glass-top mb-3">
+    <nav class="navbar navbar-expand-lg glass-top mb-3">
         <div class="container-fluid">
             <span class="navbar-brand fw-bold text-primary"><i class="bi bi-diagram-3"></i> Lab Management</span>
             
             <div class="d-flex align-items-center ms-4 me-auto gap-3">
-                <select id="listSelector" class="form-select w-auto fw-bold shadow-sm" onchange="handleListChange()">
+                <select id="listSelector" class="form-select w-auto fw-bold shadow-sm bg-body" onchange="handleListChange()">
                     <option value="" disabled selected>Select a List...</option>
                 </select>
-                <button class="btn btn-sm btn-outline-secondary shadow-sm bg-white" onclick="manageList()"><i class="bi bi-gear"></i> Setup List</button>
+                <button class="btn btn-sm btn-outline-secondary shadow-sm bg-body" onclick="manageList()"><i class="bi bi-gear"></i> Setup List</button>
                 
                 <div class="dropdown">
                     <button class="btn btn-success dropdown-toggle shadow-sm" type="button" data-bs-toggle="dropdown"><i class="bi bi-box-arrow-right"></i> Export</button>
@@ -90,14 +114,19 @@
                 </div>
                 
                 <button class="btn btn-dark shadow-sm" onclick="openInventoryModal()"><i class="bi bi-boxes"></i> Search / Edit Product Inventory</button>
-                <button class="btn btn-outline-dark shadow-sm bg-white" id="btnUsers" onclick="openUsersModal()" style="display:none;"><i class="bi bi-people-fill"></i> Users</button>
+                <button class="btn btn-outline-primary shadow-sm bg-body" id="btnUsers" onclick="openUsersModal()" style="display:none;"><i class="bi bi-people-fill"></i> Users</button>
             </div>
 
-            <div class="nav-user text-end d-flex flex-column align-items-end">
+            <div class="nav-user text-end d-flex flex-column align-items-end me-3">
                 <span class="fw-bold"><i class="bi bi-person-circle"></i> <span id="uiUsername">User</span></span>
                 <small class="text-muted" id="uiRole">Role</small>
                 <button class="btn btn-link text-danger p-0" style="font-size:0.8rem; text-decoration:none;" onclick="logout()">Logout</button>
             </div>
+            
+            <!-- Dark Mode Toggle Button -->
+            <button class="btn btn-outline-secondary shadow-sm bg-body ms-2" id="themeToggle" onclick="toggleTheme()" title="Toggle Dark Mode">
+                <i class="bi bi-moon-fill" id="themeIcon"></i>
+            </button>
         </div>
     </nav>
 
@@ -117,7 +146,7 @@
             
             <div>
                 <button class="btn btn-warning btn-sm fw-bold me-2 shadow-sm" onclick="saveTableEdits()" id="btnSaveEdits"><i class="bi bi-floppy"></i> Save Table Edits</button>
-                <input type="text" id="searchInput" class="form-control form-control-sm d-inline-block shadow-sm" style="width:250px;" placeholder="Filter table...">
+                <input type="text" id="searchInput" class="form-control form-control-sm d-inline-block shadow-sm bg-body" style="width:250px;" placeholder="Filter table...">
             </div>
         </div>
         
@@ -134,24 +163,25 @@
             <div class="row align-items-center text-center">
                 <div class="col-md-4 border-end border-success">
                     <h6 class="text-success mb-1">Total Cost (This List)</h6>
-                    <h4 id="totalBudget" class="text-dark fw-bold mb-0">₹0.00</h4>
+                    <h4 id="totalBudget" class="text-body fw-bold mb-0">₹0.00</h4>
                 </div>
                 <div class="col-md-4 border-end border-success">
                     <h6 class="text-success mb-1">Budget Assigned (₹)</h6>
                     <div class="d-flex justify-content-center">
-                        <input type="number" class="form-control form-control-sm text-center fw-bold w-50" id="budgetInHand" disabled>
+                        <input type="number" class="form-control form-control-sm text-center fw-bold w-50 bg-body" id="budgetInHand" disabled>
                         <button class="btn btn-sm btn-outline-success ms-2" id="btnUpdateBudget" onclick="updateBudget()" style="display:none;"><i class="bi bi-check-lg"></i></button>
                     </div>
                 </div>
                 <div class="col-md-4">
                     <h6 class="text-success mb-1">Balance</h6>
-                    <h4 id="budgetBalance" class="text-dark fw-bold mb-0">₹0.00</h4>
+                    <h4 id="budgetBalance" class="text-body fw-bold mb-0">₹0.00</h4>
                 </div>
             </div>
         </div>
     </div>
 </div>
 
+<!-- Modals -->
 <!-- Add Vendor Modal -->
 <div class="modal fade" id="addVendorModal" tabindex="-1">
   <div class="modal-dialog modal-sm">
@@ -209,7 +239,7 @@
 <div class="modal fade" id="inventoryModal" tabindex="-1">
   <div class="modal-dialog modal-xl modal-dialog-scrollable">
     <div class="modal-content">
-      <div class="modal-header bg-light"><h5 class="modal-title"><i class="bi bi-boxes"></i> Product Inventory</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-header bg-body-tertiary"><h5 class="modal-title"><i class="bi bi-boxes"></i> Product Inventory</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
       <div class="modal-body">
         <input type="text" id="invSearch" class="form-control mb-3" placeholder="Search Database...">
         <div class="table-responsive" style="max-height: 50vh;">
@@ -227,7 +257,7 @@
 <div class="modal fade" id="usersModal" tabindex="-1">
   <div class="modal-dialog modal-lg">
     <div class="modal-content">
-      <div class="modal-header bg-light"><h5 class="modal-title"><i class="bi bi-people-fill"></i> User Management</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-header bg-body-tertiary"><h5 class="modal-title"><i class="bi bi-people-fill"></i> User Management</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
       <div class="modal-body">
         <form id="addUserForm" class="row g-2 mb-4">
             <div class="col-md-3"><input type="text" id="newUName" class="form-control" placeholder="Username" required></div>
@@ -258,7 +288,6 @@
           <label class="form-label fw-bold">Select Vendor to Export</label>
           <select id="exportVendorSelect" class="form-select mb-3" onchange="renderExportCheckboxes()">
               <option value="ALL">Master List (All Active)</option>
-              <!-- Populated Dynamically -->
           </select>
           <label class="form-label fw-bold">Select Columns</label>
           <div id="exportColCheckboxes"></div>
