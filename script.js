@@ -45,6 +45,7 @@ function showApp() {
     if (USER.role === "Admin" || USER.role === "Lab Supervisor") {
         document.getElementById('budgetInHand').disabled = false;
         document.getElementById('btnUpdateBudget').style.display = "block";
+        document.getElementById('btnUsers').style.display = "inline-block";
     }
     fetchInitData();
 }
@@ -65,16 +66,27 @@ function populateListDropdown() {
     sel.innerHTML = '<option value="" disabled selected>Select a List...</option>';
     activeLists.forEach(l => { sel.innerHTML += `<option value="${l.name}">${l.name}</option>`; });
     sel.innerHTML += `<option value="_NEW_" class="text-primary fw-bold">+ Create New List</option>`;
-    if(activeLists.length > 0) { sel.value = activeLists[0].name; handleListChange(); }
+    
+    const curr = sel.getAttribute('data-curr');
+    if (curr && activeLists.find(x => x.name === curr)) {
+        sel.value = curr;
+        handleListChange();
+    } else if(activeLists.length > 0) { 
+        sel.value = activeLists[0].name; 
+        handleListChange(); 
+    }
 }
 
 async function handleListChange() {
     const val = document.getElementById('listSelector').value;
+    document.getElementById('listSelector').setAttribute('data-curr', val);
+
     if (val === "_NEW_") {
         const today = new Date().toISOString().split('T')[0];
         let newName = prompt("Enter new list name:", today);
         if(newName) {
             await apiPost({action: "manageList", subAction: "create", listName: newName, username: USER.username, inheritedBudget: latestInheritedBudget});
+            document.getElementById('listSelector').setAttribute('data-curr', newName);
             fetchInitData(); 
         } else { document.getElementById('listSelector').value = activeLists[0] ? activeLists[0].name : ""; }
         return;
@@ -99,7 +111,7 @@ function renderTable() {
     let total = 0;
     
     currentListData.forEach((row, i) => {
-        const mQty = productDB[row['Product Code']] ? productDB[row['Product Code']].minQty : 1;
+        const mQty = productDB[row['Product Code']] ? productDB[row['Product Code']].minQty : (row['Min Qty'] || 1);
         
         if(!row._isEditing) {
             const qty = parseFloat(row['Qty']) || 0;
@@ -113,16 +125,16 @@ function renderTable() {
                     <button class="btn btn-sm btn-outline-danger py-0 px-1 ms-1" onclick="deleteRow(${i})" title="Delete"><i class="bi bi-trash"></i></button>
                 </td>
                 <td class="sticky-col-2 fw-bold">${row['Product Code'] || ''}</td>
-                <td class="sticky-col-3">${row['Product Name'] || ''}</td>
-                <td class="sticky-col-4">${row['Category'] || ''}</td>
-                <td class="sticky-col-5">${row['Company'] || ''}</td>
+                <td class="name-col text-wrap">${row['Product Name'] || ''}</td>
+                <td>${row['Category'] || ''}</td>
+                <td>${row['Company'] || ''}</td>
                 <td class="text-wrap">${row['Company Specs'] || ''}</td>
                 <td class="text-center">${mQty}</td>
                 <td>${row['Qty'] || ''}</td>
                 <td>${row['Unit'] || ''}</td>
                 <td>${row['Company Price'] || ''}</td>
                 <td class="fw-bold text-success">
-                    <input type="number" class="form-control form-control-sm" value="${row['Price'] || ''}" onchange="updateRowData(${i}, 'Price', this.value)">
+                    <input type="number" class="form-control form-control-sm number-box" value="${row['Price'] || ''}" onchange="updateRowData(${i}, 'Price', this.value)">
                 </td>
                 <td>
                     <input type="text" list="vendorList" class="form-control form-control-sm" value="${row['Vendor'] || ''}" onchange="updateRowData(${i}, 'Vendor', this.value)">
@@ -136,21 +148,21 @@ function renderTable() {
                     <button class="btn btn-sm btn-success py-0 px-1" onclick="saveRow(${i})" title="Save"><i class="bi bi-check-lg"></i></button>
                     <button class="btn btn-sm btn-danger py-0 px-1 ms-1" onclick="cancelRow(${i})" title="Cancel"><i class="bi bi-x-lg"></i></button>
                 </td>
-                <td class="sticky-col-2"><input type="text" class="form-control form-control-sm pCode fw-bold" value="${row['Product Code'] || ''}" list="codeList" onkeydown="handleEnter(event, this, ${i})" placeholder="Code (Enter)"></td>
-                <td class="sticky-col-3"><input type="text" class="form-control form-control-sm pName" value="${row['Product Name'] || ''}" list="nameList" onkeydown="handleEnter(event, this, ${i})" placeholder="Name (Enter)"></td>
-                <td class="sticky-col-4"><input type="text" class="form-control form-control-sm pCategory" value="${row['Category'] || ''}" list="categoryList"></td>
-                <td class="sticky-col-5"><input type="text" class="form-control form-control-sm pCompany" value="${row['Company'] || ''}" list="companyList"></td>
-                <td><input type="text" class="form-control form-control-sm pSpecs" value="${row['Company Specs'] || ''}"></td>
-                <td><input type="number" class="form-control form-control-sm pMinQty" value="${actMin}" ${row._lockUnit ? 'disabled' : ''}></td>
-                <td><input type="number" class="form-control form-control-sm pQty" value="${row['Qty'] || ''}" min="${actMin}"></td>
+                <td class="sticky-col-2"><input type="text" class="form-control form-control-sm pCode fw-bold" value="${row['Product Code'] || ''}" list="codeList" onkeydown="handleEnter(event, this, ${i})" placeholder="Code"></td>
+                <td class="name-col"><textarea class="form-control form-control-sm pName" rows="2" list="nameList" onkeydown="handleEnter(event, this, ${i})">${row['Product Name'] || ''}</textarea></td>
+                <td><input type="text" class="form-control form-control-sm pCategory" value="${row['Category'] || ''}" list="categoryList"></td>
+                <td><input type="text" class="form-control form-control-sm pCompany" value="${row['Company'] || ''}" list="companyList"></td>
+                <td><textarea class="form-control form-control-sm pSpecs" rows="2">${row['Company Specs'] || ''}</textarea></td>
+                <td><input type="number" class="form-control form-control-sm pMinQty number-box" value="${actMin}" ${row._lockUnit ? 'disabled' : ''}></td>
+                <td><input type="number" class="form-control form-control-sm pQty number-box" value="${row['Qty'] || ''}" min="${actMin}"></td>
                 <td>
-                    <select class="form-select form-select-sm pUnit" onchange="checkNewUnit(this)" ${row._lockUnit ? 'disabled' : ''}>
+                    <select class="form-select form-select-sm pUnit number-box" onchange="checkNewUnit(this)" ${row._lockUnit ? 'disabled' : ''}>
                         <option value="${row['Unit'] || 'Piece'}" selected>${row['Unit'] || 'Piece'}</option>
                         <option value="Box">Box</option><option value="Packet">Packet</option><option value="_NEW_">+ Add</option>
                     </select>
                 </td>
-                <td><input type="number" step="0.01" class="form-control form-control-sm pCompPrice" value="${row['Company Price'] || ''}"></td>
-                <td><input type="number" step="0.01" class="form-control form-control-sm pPrice" value="${row['Price'] || ''}"></td>
+                <td><input type="number" step="0.01" class="form-control form-control-sm pCompPrice number-box" value="${row['Company Price'] || ''}"></td>
+                <td><input type="number" step="0.01" class="form-control form-control-sm pPrice number-box" value="${row['Price'] || ''}"></td>
                 <td><input type="text" class="form-control form-control-sm pVendor" value="${row['Vendor'] || ''}" list="vendorList"></td>
             </tr>`;
         }
@@ -211,9 +223,8 @@ function checkNewUnit(sel) {
     }
 }
 
-// -- Enter Key Trigger Auto-fill --
 function handleEnter(e, elem, index) {
-    if (e.key === 'Enter') {
+    if (e.key === 'Enter' && !e.shiftKey) { // shift+enter allows newlines in textarea
         e.preventDefault();
         fillRowByData(elem, index);
     }
@@ -338,14 +349,54 @@ async function updateBudget() {
     alert("Budget saved for this list.");
 }
 
-// -- Setup & Sharing --
+// -- List Setup (Rename, Delete, Collaborators) --
 function manageList() {
     const lName = document.getElementById('listSelector').value;
     if(!lName) return;
     const meta = activeLists.find(l => l.name === lName);
+    
+    document.getElementById('listRename').value = lName;
     document.getElementById('listCollabs').value = meta.collabs.join(',');
+    
+    // Hide Delete/Rename for students unless they own it
+    if (USER.role === "Admin" || USER.role === "Lab Supervisor" || meta.owner === USER.username) {
+        document.getElementById('listRename').disabled = false;
+    } else {
+        document.getElementById('listRename').disabled = true;
+    }
+    
     new bootstrap.Modal(document.getElementById('listModal')).show();
 }
+
+async function renameList() {
+    const oldName = document.getElementById('listSelector').value;
+    const newName = document.getElementById('listRename').value.trim();
+    if (!newName || oldName === newName) return;
+    
+    if (activeLists.some(l => l.name === newName)) return alert("List name already exists!");
+    
+    await apiPost({action: "manageList", subAction: "rename", oldName: oldName, newName: newName});
+    document.getElementById('listSelector').setAttribute('data-curr', newName);
+    bootstrap.Modal.getInstance(document.getElementById('listModal')).hide();
+    fetchInitData();
+}
+
+async function deleteList() {
+    const lName = document.getElementById('listSelector').value;
+    const meta = activeLists.find(l => l.name === lName);
+    
+    if (USER.role !== "Admin" && USER.role !== "Lab Supervisor" && meta.owner !== USER.username) {
+        return alert("You do not have permission to delete this list.");
+    }
+    
+    if(confirm(`Are you absolutely sure you want to delete the list '${lName}'? This cannot be undone.`)) {
+        await apiPost({action: "manageList", subAction: "delete", listName: lName});
+        document.getElementById('listSelector').setAttribute('data-curr', "");
+        bootstrap.Modal.getInstance(document.getElementById('listModal')).hide();
+        fetchInitData();
+    }
+}
+
 async function saveListSettings() {
     const lName = document.getElementById('listSelector').value;
     const cols = document.getElementById('listCollabs').value;
@@ -359,8 +410,12 @@ function openInventoryModal() {
     const tbody = document.getElementById('invBody');
     tbody.innerHTML = '';
     for(const [code, p] of Object.entries(productDB)) {
-        const btn = (USER.role === "Admin" || USER.role === "Lab Supervisor") ? `<button class="btn btn-sm btn-outline-warning" onclick="openEditProduct('${code}')"><i class="bi bi-pencil-square"></i></button>` : `<span class="text-muted small">View</span>`;
-        tbody.innerHTML += `<tr><td>${code}</td><td>${p.name}</td><td>${p.category||''}</td><td>${p.company||''}</td><td>${p.specs||''}</td><td>${p.minQty||1}</td><td>${p.unit||''}</td><td>${p.compPrice||''}</td><td>${btn}</td></tr>`;
+        let btn = `<span class="text-muted small">View</span>`;
+        if (USER.role === "Admin" || USER.role === "Lab Supervisor") {
+            btn = `<button class="btn btn-sm btn-outline-warning py-0 px-1" onclick="openEditProduct('${code}')" title="Edit"><i class="bi bi-pencil-square"></i></button>
+                   <button class="btn btn-sm btn-outline-danger py-0 px-1 ms-1" onclick="deleteProduct('${code}')" title="Delete"><i class="bi bi-trash"></i></button>`;
+        }
+        tbody.innerHTML += `<tr><td>${code}</td><td class="text-wrap" style="min-width:150px;">${p.name}</td><td>${p.category||''}</td><td>${p.company||''}</td><td class="text-wrap" style="min-width:200px;">${p.specs||''}</td><td>${p.minQty||1}</td><td>${p.unit||''}</td><td>${p.compPrice||''}</td><td class="text-center">${btn}</td></tr>`;
     }
     new bootstrap.Modal(document.getElementById('inventoryModal')).show();
 }
@@ -397,11 +452,53 @@ async function submitProductEdit() {
     fetchInitData(); 
 }
 
+async function deleteProduct(code) {
+    if(confirm(`Are you sure you want to delete Product Code: ${code} from the inventory?`)) {
+        await apiPost({action: "deleteProduct", role: USER.role, code: code});
+        fetchInitData(); 
+        bootstrap.Modal.getInstance(document.getElementById('inventoryModal')).hide();
+    }
+}
+
 document.getElementById('invSearch').addEventListener('keyup', function() {
     const f = this.value.toLowerCase();
     const rows = document.getElementById('invBody').getElementsByTagName('tr');
     for(let i=0; i<rows.length; i++) rows[i].style.display = rows[i].innerText.toLowerCase().includes(f) ? "" : "none";
 });
+
+// -- User Management (Admin / Supervisor Only) --
+async function openUsersModal() {
+    const res = await apiPost({action: "manageUsers", subAction: "get", role: USER.role});
+    if(res.status === "success") {
+        const tbody = document.getElementById('usersBody');
+        tbody.innerHTML = "";
+        res.users.forEach(u => {
+            const btn = (u.username === "admin") ? "" : `<button class="btn btn-sm btn-outline-danger py-0 px-1" onclick="deleteUser('${u.username}')"><i class="bi bi-trash"></i></button>`;
+            tbody.innerHTML += `<tr><td>${u.username}</td><td>${u.role}</td><td class="text-center">${btn}</td></tr>`;
+        });
+        new bootstrap.Modal(document.getElementById('usersModal')).show();
+    }
+}
+
+document.getElementById('addUserForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const u = document.getElementById('newUName').value.trim();
+    const p = document.getElementById('newUPass').value.trim();
+    const r = document.getElementById('newURole').value;
+    
+    const res = await apiPost({action: "manageUsers", subAction: "add", role: USER.role, newUser: u, newPass: p, newRole: r});
+    if(res.status === "success") {
+        e.target.reset();
+        openUsersModal(); // Refresh modal
+    } else alert(res.message);
+});
+
+async function deleteUser(username) {
+    if(confirm(`Delete user ${username}?`)) {
+        await apiPost({action: "manageUsers", subAction: "delete", role: USER.role, targetUser: username});
+        openUsersModal();
+    }
+}
 
 // -- Export Module --
 const COLUMNS = ["SL No", "Product Code", "Product Name", "Category", "Company", "Company Specs", "Qty", "Unit", "Company Price", "Price", "Vendor"];
