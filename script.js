@@ -564,30 +564,44 @@ function openEditProduct(code) {
 
 async function submitProductEdit() {
     const btn = document.querySelector('#fullEditModal .btn-success');
+    const originalText = btn.innerHTML;
     btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Saving...'; 
     btn.disabled = true;
 
     const code = document.getElementById('editOrigCode').value;
     const payload = {
         action: "updateProduct", role: USER.role, 
-        product: { code: code, name: document.getElementById('editName').value, category: document.getElementById('editCat').value, company: document.getElementById('editComp').value, specs: document.getElementById('editSpecs').value, compPrice: document.getElementById('editPrice').value, minQty: document.getElementById('editMin').value, unit: document.getElementById('editUnit').value }
+        product: { 
+            code: code, name: document.getElementById('editName').value, category: document.getElementById('editCat').value, 
+            company: document.getElementById('editComp').value, specs: document.getElementById('editSpecs').value, 
+            compPrice: document.getElementById('editPrice').value, minQty: document.getElementById('editMin').value, 
+            unit: document.getElementById('editUnit').value 
+        }
     };
     
+    // Send to database
     await apiPost(payload);
-    await fetchInitData(); // Wait for data to sync locally
     
+    // STRICTLY WAIT for the local data to refresh before doing anything else
+    await fetchInitData(); 
+    
+    // Close edit box and instantly reopen the refreshed inventory
     bootstrap.Modal.getInstance(document.getElementById('fullEditModal')).hide();
-    openInventoryModal(); // Force visual refresh of inventory
+    openInventoryModal(); 
     
-    btn.innerHTML = '<i class="bi bi-floppy"></i> Save Info'; 
+    btn.innerHTML = originalText; 
     btn.disabled = false;
 }
 
 async function deleteProduct(code) {
     if(confirm(`Are you sure you want to delete Product Code: ${code} from the inventory?`)) {
         await apiPost({action: "deleteProduct", role: USER.role, code: code});
+        
+        // STRICTLY WAIT for data to refresh locally
         await fetchInitData(); 
-        openInventoryModal(); // Force visual refresh
+        
+        // Refresh the modal view
+        openInventoryModal(); 
     }
 }
 
