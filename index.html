@@ -13,63 +13,73 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
     
     <style>
-        body { background-color: #f8f9fa; font-size: 0.95rem; }
-        #appContainer { display: none; } 
+        :root { --glass-bg: rgba(255, 255, 255, 0.7); --glass-blur: blur(12px); }
+        body { background: linear-gradient(135deg, #fdfbfb 0%, #ebedee 100%); font-size: 0.95rem; min-height: 100vh; margin: 0;}
+        #appContainer { display: none; padding-bottom: 90px;} 
         
-        #loginScreen { height: 100vh; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #e3f2fd, #bbdefb); }
-        .login-card { background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); width: 100%; max-width: 400px; }
+        /* Glassmorphism Login Background */
+        .login-wrapper { position: relative; height: 100vh; display: flex; align-items: center; justify-content: center; overflow: hidden; background: linear-gradient(135deg, #e3f2fd, #bbdefb); }
+        .shape-1 { position: absolute; top: -50px; left: -50px; width: 400px; height: 400px; background: rgba(100, 150, 250, 0.4); border-radius: 50%; filter: blur(60px); z-index: 1;}
+        .shape-2 { position: absolute; bottom: -50px; right: -50px; width: 400px; height: 400px; background: rgba(250, 100, 150, 0.3); border-radius: 50%; filter: blur(70px); z-index: 1;}
+        .login-card { position: relative; z-index: 2; background: rgba(255, 255, 255, 0.6); backdrop-filter: blur(15px); -webkit-backdrop-filter: blur(15px); border: 1px solid rgba(255,255,255,0.4); padding: 40px; border-radius: 16px; box-shadow: 0 8px 32px rgba(0,0,0,0.1); width: 100%; max-width: 400px; }
         
-        .navbar { box-shadow: 0 2px 5px rgba(0,0,0,0.05); background: white !important; }
-        .nav-user { line-height: 1.2; border-left: 2px solid #e9ecef; padding-left: 15px; }
+        /* Fixed Glass Panels */
+        .glass-top { position: sticky; top: 0; z-index: 1040; background: var(--glass-bg) !important; backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur); border-bottom: 1px solid rgba(255,255,255,0.4); box-shadow: 0 4px 6px rgba(0,0,0,0.02); }
+        .glass-bottom { position: fixed; bottom: 0; left: 0; right: 0; z-index: 1040; background: rgba(232, 245, 233, 0.8); backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur); border-top: 1px solid rgba(255,255,255,0.4); padding: 15px; box-shadow: 0 -4px 6px rgba(0,0,0,0.02); margin: 0 !important; }
+        
+        .nav-user { line-height: 1.2; border-left: 2px solid #ced4da; padding-left: 15px; }
 
-        .table-responsive { background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); max-height: 65vh; overflow: auto; }
+        .table-responsive { background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); max-height: calc(100vh - 250px); overflow: auto; }
         th { white-space: nowrap; }
-        .specs-col { min-width: 280px; }
+        .specs-col { min-width: 250px; }
         .name-col { min-width: 200px; }
         
         /* Frozen Columns */
         thead th { position: sticky; top: 0; z-index: 2; background-color: #212529 !important; color: white;}
         .sticky-col-0 { position: sticky; left: 0px;   min-width: 50px;  max-width: 50px;  z-index: 1; }
         .sticky-col-1 { position: sticky; left: 50px;  min-width: 80px;  max-width: 80px;  z-index: 1; }
-        .sticky-col-2 { position: sticky; left: 130px; min-width: 100px; max-width: 100px; z-index: 1; border-right: 2px solid #6c757d; }
+        .sticky-col-2 { position: sticky; left: 130px; min-width: 100px; max-width: 100px; z-index: 1; }
+        .sticky-col-3 { position: sticky; left: 230px; min-width: 200px; max-width: 200px; z-index: 1; }
+        .sticky-col-4 { position: sticky; left: 430px; min-width: 120px; max-width: 120px; z-index: 1; border-right: 2px solid #6c757d; }
         
-        thead .sticky-col-0, thead .sticky-col-1, thead .sticky-col-2 { z-index: 3 !important; }
-        tbody tr td.sticky-col-0, tbody tr td.sticky-col-1, tbody tr td.sticky-col-2 { background-color: #ffffff; }
-        tbody tr:hover td.sticky-col-0, tbody tr:hover td.sticky-col-1, tbody tr:hover td.sticky-col-2 { background-color: #ececec; }
+        thead .sticky-col-0, thead .sticky-col-1, thead .sticky-col-2, thead .sticky-col-3, thead .sticky-col-4 { z-index: 3 !important; }
+        tbody tr td.sticky-col-0, tbody tr td.sticky-col-1, tbody tr td.sticky-col-2, tbody tr td.sticky-col-3, tbody tr td.sticky-col-4 { background-color: #ffffff; }
+        tbody tr:hover td.sticky-col-0, tbody tr:hover td.sticky-col-1, tbody tr:hover td.sticky-col-2, tbody tr:hover td.sticky-col-3, tbody tr:hover td.sticky-col-4 { background-color: #ececec; }
         tbody tr.table-warning td { background-color: #fff3cd !important; }
 
-        .budget-box { background-color: #e8f5e9; border: 2px solid #a5d6a7; border-radius: 12px; padding: 15px; }
+        .number-box { width: 70px; padding: 0.25rem; }
+        .vendor-cell { min-width: 150px; }
         #invTable thead th { position: static; z-index: auto; background-color: #e9ecef !important; color: #000; }
-        
-        /* Proper Input Widths */
-        .number-box { min-width: 70px; padding: 0.25rem; }
     </style>
 </head>
 <body>
 
-<div id="loginScreen">
+<div id="loginScreen" class="login-wrapper">
+    <div class="shape-1"></div>
+    <div class="shape-2"></div>
     <div class="login-card text-center">
-        <h4 class="mb-4">Dr. Nimmi Das Lab<br><small class="text-muted">Purchase Portal</small></h4>
-        <div class="mb-3"><input type="text" id="username" class="form-control" placeholder="Username"></div>
-        <div class="mb-3"><input type="password" id="password" class="form-control" placeholder="Password"></div>
-        <button id="loginBtn" class="btn btn-primary w-100" onclick="verifyLogin()">Login</button>
-        <p id="loginError" class="text-danger mt-2" style="display:none;"></p>
+        <i class="bi bi-shield-lock-fill text-primary mb-2" style="font-size: 3rem;"></i>
+        <h4 class="mb-4 text-dark fw-bold">Dr. Nimmi Das Lab<br><small class="text-muted fw-normal" style="font-size: 1rem;">Purchase Portal</small></h4>
+        <div class="mb-3"><input type="text" id="username" class="form-control bg-light" placeholder="Username"></div>
+        <div class="mb-3"><input type="password" id="password" class="form-control bg-light" placeholder="Password"></div>
+        <button id="loginBtn" class="btn btn-primary w-100 fw-bold" onclick="verifyLogin()">Login</button>
+        <p id="loginError" class="text-danger mt-2 fw-bold" style="display:none;"></p>
     </div>
 </div>
 
 <div id="appContainer">
-    <nav class="navbar navbar-expand-lg navbar-light mb-3">
+    <nav class="navbar navbar-expand-lg navbar-light glass-top mb-3">
         <div class="container-fluid">
-            <span class="navbar-brand fw-bold text-primary">Lab Management</span>
+            <span class="navbar-brand fw-bold text-primary"><i class="bi bi-diagram-3"></i> Lab Management</span>
             
             <div class="d-flex align-items-center ms-4 me-auto gap-3">
-                <select id="listSelector" class="form-select w-auto fw-bold" onchange="handleListChange()">
+                <select id="listSelector" class="form-select w-auto fw-bold shadow-sm" onchange="handleListChange()">
                     <option value="" disabled selected>Select a List...</option>
                 </select>
-                <button class="btn btn-sm btn-outline-secondary" onclick="manageList()"><i class="bi bi-gear"></i> Setup List</button>
+                <button class="btn btn-sm btn-outline-secondary shadow-sm bg-white" onclick="manageList()"><i class="bi bi-gear"></i> Setup List</button>
                 
                 <div class="dropdown">
-                    <button class="btn btn-success dropdown-toggle" type="button" data-bs-toggle="dropdown"><i class="bi bi-box-arrow-right"></i> Export</button>
+                    <button class="btn btn-success dropdown-toggle shadow-sm" type="button" data-bs-toggle="dropdown"><i class="bi bi-box-arrow-right"></i> Export</button>
                     <ul class="dropdown-menu">
                         <li><a class="dropdown-item" href="#" onclick="openExportModal('excel')"><i class="bi bi-file-earmark-excel"></i> Excel File</a></li>
                         <li><a class="dropdown-item" href="#" onclick="openExportModal('csv')"><i class="bi bi-filetype-csv"></i> CSV File</a></li>
@@ -79,8 +89,8 @@
                     </ul>
                 </div>
                 
-                <button class="btn btn-dark" onclick="openInventoryModal()"><i class="bi bi-boxes"></i> Search / Edit Product Inventory</button>
-                <button class="btn btn-outline-dark" id="btnUsers" onclick="openUsersModal()" style="display:none;"><i class="bi bi-people-fill"></i> Users</button>
+                <button class="btn btn-dark shadow-sm" onclick="openInventoryModal()"><i class="bi bi-boxes"></i> Search / Edit Product Inventory</button>
+                <button class="btn btn-outline-dark shadow-sm bg-white" id="btnUsers" onclick="openUsersModal()" style="display:none;"><i class="bi bi-people-fill"></i> Users</button>
             </div>
 
             <div class="nav-user text-end d-flex flex-column align-items-end">
@@ -92,46 +102,35 @@
     </nav>
 
     <div class="container-fluid">
-        <!-- Hidden Datalists -->
         <datalist id="categoryList"></datalist>
         <datalist id="nameList"></datalist>
         <datalist id="companyList"></datalist>
         <datalist id="codeList"></datalist>
         <datalist id="vendorList"></datalist>
 
-        <div class="d-flex justify-content-between mb-2">
-            <button class="btn btn-primary fw-bold shadow-sm" onclick="addNewRow()"><i class="bi bi-plus-lg"></i> Add Item</button>
+        <div class="d-flex justify-content-between mb-2 align-items-center">
+            <div>
+                <button class="btn btn-primary fw-bold shadow-sm" onclick="addNewRow()"><i class="bi bi-plus-lg"></i> Add Item</button>
+                <button class="btn btn-info fw-bold shadow-sm ms-2 text-white" onclick="openAddVendorModal()"><i class="bi bi-shop"></i> Add Vendor</button>
+                <button class="btn btn-secondary fw-bold shadow-sm ms-2" onclick="optimizeVendors()"><i class="bi bi-magic"></i> Optimize Plan</button>
+            </div>
             
             <div>
-                <button class="btn btn-warning btn-sm fw-bold me-2" onclick="saveTableEdits()" id="btnSaveEdits"><i class="bi bi-floppy"></i> Save Table Edits</button>
-                <input type="text" id="searchInput" class="form-control form-control-sm d-inline-block" style="width:250px;" placeholder="Filter table...">
+                <button class="btn btn-warning btn-sm fw-bold me-2 shadow-sm" onclick="saveTableEdits()" id="btnSaveEdits"><i class="bi bi-floppy"></i> Save Table Edits</button>
+                <input type="text" id="searchInput" class="form-control form-control-sm d-inline-block shadow-sm" style="width:250px;" placeholder="Filter table...">
             </div>
         </div>
         
         <div class="table-responsive mb-3 clear-both w-100">
             <table class="table table-bordered table-sm table-hover mb-0" id="purchaseTable">
-                <thead class="table-dark">
-                    <tr>
-                        <th class="sticky-col-0">SL No</th>
-                        <th class="sticky-col-1 text-center">Action</th>
-                        <th class="sticky-col-2">Code</th>
-                        <th class="name-col">Name</th>
-                        <th>Category</th>
-                        <th>Company</th>
-                        <th class="specs-col">Specifications</th>
-                        <th>Min Qty</th>
-                        <th>Req Qty</th>
-                        <th>Unit</th>
-                        <th>Est Price</th>
-                        <th>Final Price</th>
-                        <th>Vendor</th>
-                    </tr>
+                <thead class="table-dark" id="tableHead">
+                    <!-- Dynamic Headers Generated in JS -->
                 </thead>
                 <tbody id="tableBody"></tbody>
             </table>
         </div>
 
-        <div class="budget-box mb-4">
+        <div class="glass-bottom">
             <div class="row align-items-center text-center">
                 <div class="col-md-4 border-end border-success">
                     <h6 class="text-success mb-1">Total Cost (This List)</h6>
@@ -153,22 +152,30 @@
     </div>
 </div>
 
-<!-- List Setup Modal (With Rename & Delete) -->
+<!-- Add Vendor Modal -->
+<div class="modal fade" id="addVendorModal" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title"><i class="bi bi-shop"></i> Add Vendor</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <label class="form-label small">Select or Type Vendor Name</label>
+        <input type="text" id="newVendorName" list="vendorList" class="form-control">
+      </div>
+      <div class="modal-footer"><button class="btn btn-info text-white w-100 fw-bold" onclick="confirmAddVendor()">Add to Table</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- List Setup Modal -->
 <div class="modal fade" id="listModal" tabindex="-1">
   <div class="modal-dialog">
     <div class="modal-content">
       <div class="modal-header"><h5 class="modal-title"><i class="bi bi-gear"></i> List Setup</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
       <div class="modal-body">
         <label class="fw-bold mb-1">Rename List</label>
-        <div class="d-flex gap-2 mb-3">
-            <input type="text" id="listRename" class="form-control">
-            <button class="btn btn-primary" onclick="renameList()">Rename</button>
-        </div>
-        <hr>
-        <label class="fw-bold mb-1"><i class="bi bi-people"></i> Collaborators (comma separated usernames)</label>
-        <input type="text" id="listCollabs" class="form-control mb-3">
-        <button class="btn btn-success w-100 mb-3" onclick="saveListSettings()">Save Collaborators</button>
-        <hr>
+        <div class="d-flex gap-2 mb-3"><input type="text" id="listRename" class="form-control"><button class="btn btn-primary" onclick="renameList()">Rename</button></div><hr>
+        <label class="fw-bold mb-1"><i class="bi bi-people"></i> Collaborators (usernames, comma separated)</label>
+        <input type="text" id="listCollabs" class="form-control mb-3"><button class="btn btn-success w-100 mb-3" onclick="saveListSettings()">Save Collaborators</button><hr>
         <button class="btn btn-outline-danger w-100" onclick="deleteList()"><i class="bi bi-trash"></i> Delete This List Completely</button>
       </div>
     </div>
@@ -202,10 +209,7 @@
 <div class="modal fade" id="inventoryModal" tabindex="-1">
   <div class="modal-dialog modal-xl modal-dialog-scrollable">
     <div class="modal-content">
-      <div class="modal-header bg-light">
-        <h5 class="modal-title"><i class="bi bi-boxes"></i> Product Inventory</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-      </div>
+      <div class="modal-header bg-light"><h5 class="modal-title"><i class="bi bi-boxes"></i> Product Inventory</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
       <div class="modal-body">
         <input type="text" id="invSearch" class="form-control mb-3" placeholder="Search Database...">
         <div class="table-responsive" style="max-height: 50vh;">
@@ -223,10 +227,7 @@
 <div class="modal fade" id="usersModal" tabindex="-1">
   <div class="modal-dialog modal-lg">
     <div class="modal-content">
-      <div class="modal-header bg-light">
-        <h5 class="modal-title"><i class="bi bi-people-fill"></i> User Management</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-      </div>
+      <div class="modal-header bg-light"><h5 class="modal-title"><i class="bi bi-people-fill"></i> User Management</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
       <div class="modal-body">
         <form id="addUserForm" class="row g-2 mb-4">
             <div class="col-md-3"><input type="text" id="newUName" class="form-control" placeholder="Username" required></div>
@@ -242,10 +243,7 @@
             </div>
             <div class="col-md-2"><button type="submit" class="btn btn-primary w-100">Add</button></div>
         </form>
-        <table class="table table-sm table-bordered">
-            <thead class="table-dark"><tr><th>Username</th><th>Role</th><th>Action</th></tr></thead>
-            <tbody id="usersBody"></tbody>
-        </table>
+        <table class="table table-sm table-bordered"><thead class="table-dark"><tr><th>Username</th><th>Role</th><th>Action</th></tr></thead><tbody id="usersBody"></tbody></table>
       </div>
     </div>
   </div>
@@ -255,9 +253,17 @@
 <div class="modal fade" id="exportModal" tabindex="-1">
   <div class="modal-dialog modal-sm">
     <div class="modal-content">
-      <div class="modal-header"><h6 class="modal-title">Select Columns</h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
-      <div class="modal-body" id="exportColCheckboxes"></div>
-      <div class="modal-footer p-1"><button class="btn btn-success btn-sm w-100" onclick="executeExport()">Confirm Export</button></div>
+      <div class="modal-header"><h6 class="modal-title">Export Settings</h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+          <label class="form-label fw-bold">Select Vendor to Export</label>
+          <select id="exportVendorSelect" class="form-select mb-3" onchange="renderExportCheckboxes()">
+              <option value="ALL">Master List (All Active)</option>
+              <!-- Populated Dynamically -->
+          </select>
+          <label class="form-label fw-bold">Select Columns</label>
+          <div id="exportColCheckboxes"></div>
+      </div>
+      <div class="modal-footer p-1"><button class="btn btn-success btn-sm w-100 fw-bold" onclick="executeExport()">Confirm Export</button></div>
     </div>
   </div>
 </div>
