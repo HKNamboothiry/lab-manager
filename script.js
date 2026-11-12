@@ -95,21 +95,32 @@ async function handleListChange() {
         return;
     }
     
-    document.getElementById('tableBody').innerHTML = '<tr><td colspan="20" class="text-center">Loading...</td></tr>';
+    const tbody = document.getElementById('tableBody');
+    tbody.innerHTML = '<tr><td colspan="20" class="text-center">Loading...</td></tr>';
+    
     const listMeta = activeLists.find(l => l.name === val);
-    document.getElementById('budgetInHand').value = listMeta.budget;
+    if(listMeta) document.getElementById('budgetInHand').value = listMeta.budget;
 
     try {
         const payload = await apiPost({action: "getListData", listName: val});
-        // Dynamic Headers parsing
-        let fetchedHeaders = payload.headers || BASE_HEADERS;
-        let finalPriceIdx = fetchedHeaders.indexOf("Final Price");
-        activeVendors = (finalPriceIdx > -1 && finalPriceIdx < fetchedHeaders.length - 1) ? fetchedHeaders.slice(finalPriceIdx + 1) : [];
         
-        currentListData = payload.rows;
+        // Bulletproof handling for cached versions of Google Scripts
+        if (Array.isArray(payload)) {
+            currentListData = payload;
+            activeVendors = [];
+        } else {
+            let fetchedHeaders = payload.headers || BASE_HEADERS;
+            let finalPriceIdx = fetchedHeaders.indexOf("Final Price");
+            activeVendors = (finalPriceIdx > -1 && finalPriceIdx < fetchedHeaders.length - 1) ? fetchedHeaders.slice(finalPriceIdx + 1) : [];
+            currentListData = payload.rows || [];
+        }
+        
         currentListData.forEach(r => { r._isEditing = false; });
         renderTable();
-    } catch (e) { document.getElementById('tableBody').innerHTML = '<tr><td colspan="20" class="text-danger text-center">Load failed</td></tr>'; }
+    } catch (e) { 
+        console.error("Data Load Error:", e);
+        tbody.innerHTML = '<tr><td colspan="20" class="text-danger text-center fw-bold">Load failed. Please verify API deployment.</td></tr>'; 
+    }
 }
 
 // -- Dynamic Table Engine --
