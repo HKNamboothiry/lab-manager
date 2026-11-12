@@ -1,50 +1,21 @@
-// -- Dark Mode Initialization & Toggle --
-const currentTheme = localStorage.getItem('theme') || 'light';
-document.documentElement.setAttribute('data-bs-theme', currentTheme);
-
-function toggleTheme() {
-    const html = document.documentElement;
-    const icon = document.getElementById('themeIcon');
-    if (html.getAttribute('data-bs-theme') === 'dark') {
-        html.setAttribute('data-bs-theme', 'light');
-        localStorage.setItem('theme', 'light');
-        icon.className = "bi bi-moon-fill";
-    } else {
-        html.setAttribute('data-bs-theme', 'dark');
-        localStorage.setItem('theme', 'dark');
-        icon.className = "bi bi-sun-fill text-warning";
-    }
-}
-
-// Ensure icon is correct on load
-window.addEventListener('DOMContentLoaded', () => {
-    const icon = document.getElementById('themeIcon');
-    if(icon) {
-        if(currentTheme === 'dark') icon.className = "bi bi-sun-fill text-warning";
-        else icon.className = "bi bi-moon-fill";
-    }
-});
-
 const API_URL = "https://script.google.com/macros/s/AKfycbwet17KJDzMQl0FlMOaqB8M0otVWCckd9DEnq4vlnvmOHRix1HBNaYpaVRtxYM6r2Y/exec";
     
 let USER = null;
 let productDB = {};
 let activeLists = [];
 let currentListData = [];
-let activeVendors = []; // Track vendors added to current list
+let activeVendors = [];
 let vendorDB = [];
 let latestInheritedBudget = 0;
 let currentExportType = "";
 
 const BASE_HEADERS = ["SL No", "Product Code", "Product Name", "Category", "Company", "Company Specs", "Min Qty", "Qty", "Unit", "Company Price", "Selected Vendor", "Final Price"];
 
-// -- Core API Helper --
 async function apiPost(payload) {
     const res = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(payload) });
     return await res.json();
 }
 
-// -- Authentication --
 if (sessionStorage.getItem("user")) { USER = JSON.parse(sessionStorage.getItem("user")); showApp(); }
 
 async function verifyLogin() {
@@ -122,16 +93,13 @@ async function handleListChange() {
         return;
     }
     
-    const tbody = document.getElementById('tableBody');
-    tbody.innerHTML = '<tr><td colspan="20" class="text-center">Loading...</td></tr>';
-    
+    document.getElementById('tableBody').innerHTML = '<tr><td colspan="20" class="text-center">Loading...</td></tr>';
     const listMeta = activeLists.find(l => l.name === val);
     if(listMeta) document.getElementById('budgetInHand').value = listMeta.budget;
 
     try {
         const payload = await apiPost({action: "getListData", listName: val});
         
-        // Bulletproof handling for cached versions of Google Scripts
         if (Array.isArray(payload)) {
             currentListData = payload;
             activeVendors = [];
@@ -146,13 +114,11 @@ async function handleListChange() {
         renderTable();
     } catch (e) { 
         console.error("Data Load Error:", e);
-        tbody.innerHTML = '<tr><td colspan="20" class="text-danger text-center fw-bold">Load failed. Please verify API deployment.</td></tr>'; 
+        document.getElementById('tableBody').innerHTML = '<tr><td colspan="20" class="text-danger text-center fw-bold">Load failed. Please verify API deployment.</td></tr>'; 
     }
 }
 
-// -- Dynamic Table Engine --
 function renderTable() {
-    // 1. Render Headers
     const thead = document.getElementById('tableHead');
     let vendorHeaders = activeVendors.map(v => `<th class="text-info">${v}</th>`).join('');
     thead.innerHTML = `<tr>
@@ -172,7 +138,6 @@ function renderTable() {
         ${vendorHeaders}
     </tr>`;
 
-    // 2. Render Rows
     const tbody = document.getElementById('tableBody');
     tbody.innerHTML = "";
     let total = 0;
@@ -186,7 +151,6 @@ function renderTable() {
             total += (qty * price);
             let selVendor = row['Selected Vendor'] || '';
             
-            // Generate dynamic vendor cells
             let vendorCells = activeVendors.map(v => {
                 let vPrice = row[v] || '';
                 let isNA = vPrice === 'NA';
@@ -221,7 +185,6 @@ function renderTable() {
                 ${vendorCells}
             </tr>`;
         } else {
-            // Edit Mode - Disable vendor interactions while editing core details to avoid bugs
             const actMin = row._minQty || mQty;
             let blankVendorCells = activeVendors.map(v => `<td class="text-muted small">Save row first</td>`).join('');
             
@@ -255,7 +218,6 @@ function renderTable() {
     calcBalance();
 }
 
-// -- Vendor Interactions --
 function openAddVendorModal() {
     document.getElementById('newVendorName').value = '';
     new bootstrap.Modal(document.getElementById('addVendorModal')).show();
@@ -265,7 +227,7 @@ function confirmAddVendor() {
     const v = document.getElementById('newVendorName').value.trim();
     if(v && !activeVendors.includes(v)) {
         activeVendors.push(v);
-        currentListData.forEach(r => r[v] = ""); // Initialize empty string
+        currentListData.forEach(r => r[v] = ""); 
         renderTable();
     }
     bootstrap.Modal.getInstance(document.getElementById('addVendorModal')).hide();
@@ -294,7 +256,7 @@ function selectVendor(i, v) {
     currentListData[i]['Selected Vendor'] = v;
     currentListData[i]['Final Price'] = currentListData[i][v];
     calcTotal();
-    renderTable(); // Re-render to show Selected Vendor string
+    renderTable(); 
 }
 
 function optimizeVendors() {
@@ -326,7 +288,6 @@ function calcTotal() {
     calcBalance();
 }
 
-// -- Row Editing Base Logic --
 function addNewRow() {
     let newRow = { _isEditing: true, _isNew: true, 'Qty': 1, '_minQty': 1 };
     activeVendors.forEach(v => newRow[v] = "");
@@ -451,7 +412,6 @@ async function saveRow(i) {
         _isEditing: false
     };
 
-    // Restore vendor prices
     activeVendors.forEach(v => { currentListData[i][v] = currentListData[i]._origState ? currentListData[i]._origState[v] : ''; });
 
     const btns = tr.querySelectorAll('button');
@@ -484,7 +444,6 @@ async function syncTableToBackend() {
     }
 }
 
-// -- Budget --
 function calcBalance() {
     const t = parseFloat(document.getElementById('totalBudget').innerText.replace('₹',''));
     const h = parseFloat(document.getElementById('budgetInHand').value) || 0;
@@ -501,7 +460,6 @@ async function updateBudget() {
     alert("Budget saved for this list.");
 }
 
-// -- Setup & Sharing --
 function manageList() {
     const lName = document.getElementById('listSelector').value;
     if(!lName) return;
@@ -510,9 +468,11 @@ function manageList() {
     document.getElementById('listRename').value = lName;
     document.getElementById('listCollabs').value = meta.collabs.join(',');
     
-    if (USER.role === "Admin" || USER.role === "Lab Supervisor" || meta.owner === USER.username) document.getElementById('listRename').disabled = false;
-    else document.getElementById('listRename').disabled = true;
-    
+    if (USER.role === "Admin" || USER.role === "Lab Supervisor" || meta.owner === USER.username) {
+        document.getElementById('listRename').disabled = false;
+    } else {
+        document.getElementById('listRename').disabled = true;
+    }
     new bootstrap.Modal(document.getElementById('listModal')).show();
 }
 
@@ -548,13 +508,11 @@ async function saveListSettings() {
     fetchInitData();
 }
 
-// -- Inventory Management --
 function openInventoryModal() {
     const tbody = document.getElementById('invBody');
     tbody.innerHTML = '';
     for(const [code, p] of Object.entries(productDB)) {
         let actionBtns = `<button class="btn btn-sm btn-outline-success py-0 px-1 me-1 text-nowrap" onclick="addFromInventory('${code}')" title="Add to List"><i class="bi bi-plus-circle"></i> Add</button>`;
-        
         if (USER.role === "Admin" || USER.role === "Lab Supervisor") {
             actionBtns += `<button class="btn btn-sm btn-outline-warning py-0 px-1" onclick="openEditProduct('${code}')" title="Edit"><i class="bi bi-pencil-square"></i></button>
                    <button class="btn btn-sm btn-outline-danger py-0 px-1 ms-1" onclick="deleteProduct('${code}')" title="Delete"><i class="bi bi-trash"></i></button>`;
@@ -568,7 +526,7 @@ function addFromInventory(code) {
     if (!document.getElementById('listSelector').value) return alert("Please select or create a list first.");
     const p = productDB[code]; if (!p) return;
     if (currentListData.findIndex((r) => r['Product Code'] === code && r['Company'] === p.company && !r._isEditing) > -1) {
-        alert("This product is already in the current list!"); bootstrap.Modal.getInstance(document.getElementById('inventoryModal')).hide(); return;
+        alert("This product is already in the current list! You can edit its quantity in the table."); bootstrap.Modal.getInstance(document.getElementById('inventoryModal')).hide(); return;
     }
 
     let newRow = {
@@ -648,11 +606,9 @@ async function deleteUser(username) {
     }
 }
 
-// -- Advanced Export Module --
+// -- Export Module --
 function openExportModal(type) {
     currentExportType = type;
-    
-    // Vendor selection dropdown for filtered exporting
     let vendorOptions = `<option value="ALL">Master List (All Active)</option>`;
     activeVendors.forEach(v => vendorOptions += `<option value="${v}">${v} List</option>`);
     
@@ -678,7 +634,6 @@ function executeExport() {
     const baseListName = document.getElementById('listSelector').value;
     const fileName = mode === "ALL" ? baseListName : `${baseListName}_${mode}`;
 
-    // Filter data based on selected vendor
     let sourceData = currentListData.filter(r => !r._isEditing);
     if(mode !== "ALL") sourceData = sourceData.filter(r => r['Selected Vendor'] === mode);
 
