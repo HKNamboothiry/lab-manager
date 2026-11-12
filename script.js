@@ -8,12 +8,21 @@ let vendorDB = [];
 let latestInheritedBudget = 0;
 let currentExportType = "";
 
+// -- Core API Helper --
 async function apiPost(payload) {
-    const res = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(payload) });
+    const res = await fetch(API_URL, { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' }, 
+        body: JSON.stringify(payload) 
+    });
     return await res.json();
 }
 
-if (sessionStorage.getItem("user")) { USER = JSON.parse(sessionStorage.getItem("user")); showApp(); }
+// -- Authentication --
+if (sessionStorage.getItem("user")) { 
+    USER = JSON.parse(sessionStorage.getItem("user")); 
+    showApp(); 
+}
 
 async function verifyLogin() {
     const u = document.getElementById('username').value.trim();
@@ -50,13 +59,19 @@ function showApp() {
     fetchInitData();
 }
 
+// -- Data Loading --
 async function fetchInitData() {
     try {
         const data = await apiPost({action: "getInit", username: USER.username, role: USER.role});
         if(data.status === "success") {
-            productDB = data.products; activeLists = data.lists; vendorDB = data.vendors; latestInheritedBudget = data.latestBudget;
+            productDB = data.products; 
+            activeLists = data.lists; 
+            vendorDB = data.vendors; 
+            latestInheritedBudget = data.latestBudget;
+            
             document.getElementById('vendorList').innerHTML = vendorDB.map(v => `<option value="${v}">`).join('');
-            populateListDropdown(); updateDatalists();
+            populateListDropdown(); 
+            updateDatalists();
         }
     } catch (e) { alert("Failed to fetch initial data."); }
 }
@@ -115,12 +130,13 @@ function renderTable() {
         
         if(!row._isEditing) {
             const qty = parseFloat(row['Qty']) || 0;
-            const price = parseFloat(row['Price']) || parseFloat(row['Company Price']) || 0;
+            // STRICTLY use Final Price ('Price')
+            const price = parseFloat(row['Price']) || 0; 
             total += (qty * price);
             
             tbody.innerHTML += `<tr>
                 <td class="sticky-col-0">${i + 1}</td>
-                <td class="sticky-col-1 text-center">
+                <td class="sticky-col-1 text-center text-nowrap">
                     <button class="btn btn-sm btn-outline-primary py-0 px-1" onclick="editRow(${i})" title="Edit"><i class="bi bi-pencil-square"></i></button>
                     <button class="btn btn-sm btn-outline-danger py-0 px-1 ms-1" onclick="deleteRow(${i})" title="Delete"><i class="bi bi-trash"></i></button>
                 </td>
@@ -128,7 +144,7 @@ function renderTable() {
                 <td class="name-col text-wrap">${row['Product Name'] || ''}</td>
                 <td>${row['Category'] || ''}</td>
                 <td>${row['Company'] || ''}</td>
-                <td class="text-wrap">${row['Company Specs'] || ''}</td>
+                <td class="specs-col text-wrap">${row['Company Specs'] || ''}</td>
                 <td class="text-center">${mQty}</td>
                 <td>${row['Qty'] || ''}</td>
                 <td>${row['Unit'] || ''}</td>
@@ -144,15 +160,15 @@ function renderTable() {
             const actMin = row._minQty || mQty;
             tbody.innerHTML += `<tr id="editRow_${i}" class="table-warning">
                 <td class="sticky-col-0">${i + 1}</td>
-                <td class="sticky-col-1 text-center">
+                <td class="sticky-col-1 text-center text-nowrap">
                     <button class="btn btn-sm btn-success py-0 px-1" onclick="saveRow(${i})" title="Save"><i class="bi bi-check-lg"></i></button>
                     <button class="btn btn-sm btn-danger py-0 px-1 ms-1" onclick="cancelRow(${i})" title="Cancel"><i class="bi bi-x-lg"></i></button>
                 </td>
                 <td class="sticky-col-2"><input type="text" class="form-control form-control-sm pCode fw-bold" value="${row['Product Code'] || ''}" list="codeList" onkeydown="handleEnter(event, this, ${i})" placeholder="Code"></td>
-                <td class="name-col"><textarea class="form-control form-control-sm pName" rows="2" list="nameList" onkeydown="handleEnter(event, this, ${i})">${row['Product Name'] || ''}</textarea></td>
+                <td class="name-col"><textarea class="form-control form-control-sm pName" rows="2" list="nameList" onkeydown="handleEnter(event, this, ${i})" placeholder="Name (Enter)">${row['Product Name'] || ''}</textarea></td>
                 <td><input type="text" class="form-control form-control-sm pCategory" value="${row['Category'] || ''}" list="categoryList"></td>
                 <td><input type="text" class="form-control form-control-sm pCompany" value="${row['Company'] || ''}" list="companyList"></td>
-                <td><textarea class="form-control form-control-sm pSpecs" rows="2">${row['Company Specs'] || ''}</textarea></td>
+                <td class="specs-col"><textarea class="form-control form-control-sm pSpecs" rows="2">${row['Company Specs'] || ''}</textarea></td>
                 <td><input type="number" class="form-control form-control-sm pMinQty number-box" value="${actMin}" ${row._lockUnit ? 'disabled' : ''}></td>
                 <td><input type="number" class="form-control form-control-sm pQty number-box" value="${row['Qty'] || ''}" min="${actMin}"></td>
                 <td>
@@ -177,7 +193,8 @@ function updateRowData(index, field, value) {
     let total = 0;
     currentListData.forEach(r => {
         const qty = parseFloat(r['Qty']) || 0;
-        const price = parseFloat(r['Price']) || parseFloat(r['Company Price']) || 0;
+        // STRICTLY use Final Price ('Price')
+        const price = parseFloat(r['Price']) || 0;
         total += (qty * price);
     });
     document.getElementById('totalBudget').innerText = '₹' + total.toFixed(2);
@@ -203,8 +220,12 @@ function editRow(i) {
 }
 
 function cancelRow(i) {
-    if (currentListData[i]._isNew) currentListData.splice(i, 1);
-    else { currentListData[i] = currentListData[i]._origState; currentListData[i]._isEditing = false; }
+    if (currentListData[i]._isNew) {
+        currentListData.splice(i, 1);
+    } else {
+        currentListData[i] = currentListData[i]._origState; 
+        currentListData[i]._isEditing = false; 
+    }
     renderTable();
 }
 
@@ -223,6 +244,7 @@ function checkNewUnit(sel) {
     }
 }
 
+// -- Trigger Auto-fill on Enter --
 function handleEnter(e, elem, index) {
     if (e.key === 'Enter' && !e.shiftKey) { // shift+enter allows newlines in textarea
         e.preventDefault();
@@ -233,7 +255,10 @@ function handleEnter(e, elem, index) {
 function updateDatalists() {
     const c = new Set(), n = new Set(), comp = new Set(), code = new Set();
     for (const [cd, p] of Object.entries(productDB)) {
-        if (p.category) c.add(p.category); code.add(cd); if(p.name) n.add(p.name); if(p.company) comp.add(p.company);
+        if (p.category) c.add(p.category); 
+        code.add(cd); 
+        if(p.name) n.add(p.name); 
+        if(p.company) comp.add(p.company);
     }
     document.getElementById('categoryList').innerHTML = [...c].map(x=>`<option value="${x}">`).join('');
     document.getElementById('codeList').innerHTML = [...code].map(x=>`<option value="${x}">`).join('');
@@ -247,8 +272,10 @@ function fillRowByData(elem, index) {
     const nVal = tr.querySelector('.pName').value.trim().toLowerCase();
     
     let match = null, codeKey = null;
-    if (productDB[cVal]) { match = productDB[cVal]; codeKey = cVal; }
-    else {
+    if (productDB[cVal]) { 
+        match = productDB[cVal]; 
+        codeKey = cVal; 
+    } else {
         for (const [k, v] of Object.entries(productDB)) {
             if (v.name.toLowerCase() === nVal) { match = v; codeKey = k; break; }
         }
@@ -292,6 +319,7 @@ async function saveRow(i) {
     if (!code || !name) return alert("Code and Name are required.");
     if (qty < minQty) return alert(`Quantity cannot be less than Minimum Qty (${minQty})`);
     
+    // Duplicate check
     const dup = currentListData.findIndex((r, idx) => idx !== i && r['Product Code'] === code && r['Company'] === comp && !r._isEditing);
     if (dup > -1) return alert("This product already exists in this list! Edit the existing one instead.");
 
@@ -321,10 +349,12 @@ async function syncTableToBackend() {
         const cleanData = currentListData.filter(r => !r._isEditing);
         await apiPost({ action: "saveTableEdits", listName: document.getElementById('listSelector').value, tableData: cleanData });
         
+        // Refresh product DB safely
         const initRes = await apiPost({action: "getInit", username: USER.username, role: USER.role});
         productDB = initRes.products; vendorDB = initRes.vendors;
         document.getElementById('vendorList').innerHTML = vendorDB.map(v => `<option value="${v}">`).join('');
         updateDatalists();
+        
         renderTable();
     } catch(e) {
         alert("Failed to sync list to server.");
@@ -349,7 +379,7 @@ async function updateBudget() {
     alert("Budget saved for this list.");
 }
 
-// -- List Setup (Rename, Delete, Collaborators) --
+// -- Setup & Sharing --
 function manageList() {
     const lName = document.getElementById('listSelector').value;
     if(!lName) return;
@@ -358,7 +388,6 @@ function manageList() {
     document.getElementById('listRename').value = lName;
     document.getElementById('listCollabs').value = meta.collabs.join(',');
     
-    // Hide Delete/Rename for students unless they own it
     if (USER.role === "Admin" || USER.role === "Lab Supervisor" || meta.owner === USER.username) {
         document.getElementById('listRename').disabled = false;
     } else {
@@ -410,14 +439,57 @@ function openInventoryModal() {
     const tbody = document.getElementById('invBody');
     tbody.innerHTML = '';
     for(const [code, p] of Object.entries(productDB)) {
-        let btn = `<span class="text-muted small">View</span>`;
+        let actionBtns = `<button class="btn btn-sm btn-outline-success py-0 px-1 me-1 text-nowrap" onclick="addFromInventory('${code}')" title="Add to List"><i class="bi bi-plus-circle"></i> Add</button>`;
+        
         if (USER.role === "Admin" || USER.role === "Lab Supervisor") {
-            btn = `<button class="btn btn-sm btn-outline-warning py-0 px-1" onclick="openEditProduct('${code}')" title="Edit"><i class="bi bi-pencil-square"></i></button>
+            actionBtns += `<button class="btn btn-sm btn-outline-warning py-0 px-1" onclick="openEditProduct('${code}')" title="Edit"><i class="bi bi-pencil-square"></i></button>
                    <button class="btn btn-sm btn-outline-danger py-0 px-1 ms-1" onclick="deleteProduct('${code}')" title="Delete"><i class="bi bi-trash"></i></button>`;
+        } else {
+            actionBtns += `<span class="text-muted small ms-1">View Only</span>`;
         }
-        tbody.innerHTML += `<tr><td>${code}</td><td class="text-wrap" style="min-width:150px;">${p.name}</td><td>${p.category||''}</td><td>${p.company||''}</td><td class="text-wrap" style="min-width:200px;">${p.specs||''}</td><td>${p.minQty||1}</td><td>${p.unit||''}</td><td>${p.compPrice||''}</td><td class="text-center">${btn}</td></tr>`;
+        tbody.innerHTML += `<tr><td>${code}</td><td class="text-wrap" style="min-width:150px;">${p.name}</td><td>${p.category||''}</td><td>${p.company||''}</td><td class="text-wrap" style="min-width:200px;">${p.specs||''}</td><td>${p.minQty||1}</td><td>${p.unit||''}</td><td>${p.compPrice||''}</td><td class="text-center text-nowrap">${actionBtns}</td></tr>`;
     }
     new bootstrap.Modal(document.getElementById('inventoryModal')).show();
+}
+
+function addFromInventory(code) {
+    if (!document.getElementById('listSelector').value) {
+        alert("Please select or create a list first.");
+        return;
+    }
+    const p = productDB[code];
+    if (!p) return;
+
+    // Check duplicate
+    const dup = currentListData.findIndex((r) => r['Product Code'] === code && r['Company'] === p.company && !r._isEditing);
+    if (dup > -1) {
+        alert("This product is already in the current list! You can edit its quantity in the table.");
+        bootstrap.Modal.getInstance(document.getElementById('inventoryModal')).hide();
+        return;
+    }
+
+    currentListData.push({
+        'Product Code': code,
+        'Product Name': p.name,
+        'Category': p.category || '',
+        'Company': p.company || '',
+        'Company Specs': p.specs || '',
+        'Min Qty': p.minQty || 1,
+        'Qty': p.minQty || 1,
+        'Unit': p.unit || 'Piece',
+        'Company Price': p.compPrice || '',
+        'Price': '',
+        'Vendor': '',
+        _isEditing: true,
+        _isNew: true,
+        _minQty: p.minQty || 1,
+        _lockUnit: !!p.unit
+    });
+
+    bootstrap.Modal.getInstance(document.getElementById('inventoryModal')).hide();
+    renderTable();
+    const tContainer = document.querySelector('.table-responsive');
+    tContainer.scrollTop = tContainer.scrollHeight;
 }
 
 function openEditProduct(code) {
@@ -489,7 +561,7 @@ document.getElementById('addUserForm').addEventListener('submit', async function
     const res = await apiPost({action: "manageUsers", subAction: "add", role: USER.role, newUser: u, newPass: p, newRole: r});
     if(res.status === "success") {
         e.target.reset();
-        openUsersModal(); // Refresh modal
+        openUsersModal(); 
     } else alert(res.message);
 });
 
