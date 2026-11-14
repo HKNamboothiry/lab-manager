@@ -503,26 +503,33 @@ function openInventoryModal() {
     inventorySearchTerm = "";
     document.getElementById('invSearch').value = "";
     renderInventoryTable();
-    new bootstrap.Modal(document.getElementById('inventoryModal')).show();
+    
+    // SAFE BOOTSTRAP: Prevent invisible modal stacking freeze
+    const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('inventoryModal'));
+    modal.show();
 }
 
 function renderInventoryTable() {
     const tbody = document.getElementById('invBody');
-    tbody.innerHTML = '';
     
     const term = inventorySearchTerm.toLowerCase().trim();
     let count = 0;
-    const MAX_RESULTS = 50; // Strict cap to prevent screen freezing 
+    const MAX_RESULTS = 50; 
+    
+    // Build HTML string in memory (Super Fast) rather than drawing to screen 50 times
+    let htmlBuffer = ""; 
     
     for(const [code, p] of Object.entries(productDB)) {
         if (count >= MAX_RESULTS) break;
         
-        // Fast filtering
+        // Fast filtering with STRICT String conversion (prevents crash if name is just numbers)
         if (term) {
-            if (!code.toLowerCase().includes(term) && 
-                !(p.name && p.name.toLowerCase().includes(term)) &&
-                !(p.category && p.category.toLowerCase().includes(term)) &&
-                !(p.company && p.company.toLowerCase().includes(term))) {
+            const sCode = String(code).toLowerCase();
+            const sName = String(p.name || '').toLowerCase();
+            const sCat = String(p.category || '').toLowerCase();
+            const sComp = String(p.company || '').toLowerCase();
+            
+            if (!sCode.includes(term) && !sName.includes(term) && !sCat.includes(term) && !sComp.includes(term)) {
                 continue;
             }
         }
@@ -535,17 +542,31 @@ function renderInventoryTable() {
         } else {
             actionBtns += `<span class="text-muted small ms-1">View Only</span>`;
         }
-        tbody.innerHTML += `<tr><td>${code}</td><td class="text-wrap" style="min-width:150px;">${p.name}</td><td>${p.category||''}</td><td>${p.company||''}</td><td class="text-wrap" style="min-width:200px;">${p.specs||''}</td><td>${p.minQty||1}</td><td>${p.unit||''}</td><td>${p.compPrice||''}</td><td class="text-center text-nowrap">${actionBtns}</td></tr>`;
+        
+        htmlBuffer += `<tr>
+            <td>${code}</td>
+            <td class="text-wrap" style="min-width:150px;">${p.name || ''}</td>
+            <td>${p.category || ''}</td>
+            <td>${p.company || ''}</td>
+            <td class="text-wrap" style="min-width:200px;">${p.specs || ''}</td>
+            <td>${p.minQty || 1}</td>
+            <td>${p.unit || ''}</td>
+            <td>${p.compPrice || ''}</td>
+            <td class="text-center text-nowrap">${actionBtns}</td>
+        </tr>`;
         
         count++;
     }
     
     // Status indicators if database is huge
     if (count === 0) {
-        tbody.innerHTML = `<tr><td colspan="9" class="text-center text-muted p-3">No products found.</td></tr>`;
+        htmlBuffer = `<tr><td colspan="9" class="text-center text-muted p-3">No products found.</td></tr>`;
     } else if (count === MAX_RESULTS) {
-        tbody.innerHTML += `<tr><td colspan="9" class="text-center text-muted fst-italic bg-light">Showing top ${MAX_RESULTS} results. Keep typing to filter more...</td></tr>`;
+        htmlBuffer += `<tr><td colspan="9" class="text-center text-muted fst-italic bg-light">Showing top ${MAX_RESULTS} results. Keep typing to filter more...</td></tr>`;
     }
+    
+    // Apply buffer to the screen exactly ONCE
+    tbody.innerHTML = htmlBuffer; 
 }
 
 function addFromInventory(code) {
