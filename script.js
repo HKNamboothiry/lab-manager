@@ -511,27 +511,33 @@ function openInventoryModal() {
 
 function renderInventoryTable() {
     const tbody = document.getElementById('invBody');
-    
     const term = inventorySearchTerm.toLowerCase().trim();
+    
+    // NEW: If the search box is empty, do NOT loop the database. Stop immediately.
+    if (term.length === 0) {
+        tbody.innerHTML = `<tr>
+            <td colspan="9" class="text-center text-muted p-4">
+                <i class="bi bi-search fs-4 d-block mb-2 text-secondary"></i>
+                Start typing in the search box above to find products...
+            </td>
+        </tr>`;
+        return;
+    }
+
     let count = 0;
     const MAX_RESULTS = 50; 
-    
-    // Build HTML string in memory (Super Fast) rather than drawing to screen 50 times
     let htmlBuffer = ""; 
     
     for(const [code, p] of Object.entries(productDB)) {
         if (count >= MAX_RESULTS) break;
         
-        // Fast filtering with STRICT String conversion (prevents crash if name is just numbers)
-        if (term) {
-            const sCode = String(code).toLowerCase();
-            const sName = String(p.name || '').toLowerCase();
-            const sCat = String(p.category || '').toLowerCase();
-            const sComp = String(p.company || '').toLowerCase();
-            
-            if (!sCode.includes(term) && !sName.includes(term) && !sCat.includes(term) && !sComp.includes(term)) {
-                continue;
-            }
+        const sCode = String(code).toLowerCase();
+        const sName = String(p.name || '').toLowerCase();
+        const sCat = String(p.category || '').toLowerCase();
+        const sComp = String(p.company || '').toLowerCase();
+        
+        if (!sCode.includes(term) && !sName.includes(term) && !sCat.includes(term) && !sComp.includes(term)) {
+            continue;
         }
         
         let actionBtns = `<button class="btn btn-sm btn-outline-success py-0 px-1 me-1 text-nowrap" onclick="addFromInventory('${code}')" title="Add to List"><i class="bi bi-plus-circle"></i> Add</button>`;
@@ -558,14 +564,12 @@ function renderInventoryTable() {
         count++;
     }
     
-    // Status indicators if database is huge
     if (count === 0) {
-        htmlBuffer = `<tr><td colspan="9" class="text-center text-muted p-3">No products found.</td></tr>`;
+        htmlBuffer = `<tr><td colspan="9" class="text-center text-danger p-3 fw-bold">No products matched "${term}"</td></tr>`;
     } else if (count === MAX_RESULTS) {
-        htmlBuffer += `<tr><td colspan="9" class="text-center text-muted fst-italic bg-light">Showing top ${MAX_RESULTS} results. Keep typing to filter more...</td></tr>`;
+        htmlBuffer += `<tr><td colspan="9" class="text-center text-muted fst-italic bg-light">Showing top ${MAX_RESULTS} results. Keep typing to narrow down...</td></tr>`;
     }
     
-    // Apply buffer to the screen exactly ONCE
     tbody.innerHTML = htmlBuffer; 
 }
 
