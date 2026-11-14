@@ -58,8 +58,6 @@ async function fetchInitData() {
         const data = await apiPost({action: "getInit", username: USER.username, role: USER.role});
         if(data.status === "success") {
             productDB = data.products; activeLists = data.lists; vendorDB = data.vendors; latestInheritedBudget = data.latestBudget;
-            
-            // Vendors are few, so it's safe to load them all immediately
             document.getElementById('vendorList').innerHTML = vendorDB.map(v => `<option value="${v}">`).join('');
             populateListDropdown(); 
         }
@@ -496,15 +494,15 @@ async function saveListSettings() {
     fetchInitData();
 }
 
-// -- FUTURE PROOF INVENTORY MANAGEMENT (VIRTUALIZED) --
+// -------------------------------------------------------------
+// VIRTUALIZED INVENTORY SYSTEM WITH SMART MULTI-KEYWORD SEARCH
+// -------------------------------------------------------------
 let inventorySearchTerm = "";
 
 function openInventoryModal() {
     inventorySearchTerm = "";
     document.getElementById('invSearch').value = "";
     renderInventoryTable();
-    
-    // SAFE BOOTSTRAP: Prevent invisible modal stacking freeze
     const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('inventoryModal'));
     modal.show();
 }
@@ -513,7 +511,7 @@ function renderInventoryTable() {
     const tbody = document.getElementById('invBody');
     const rawTerm = inventorySearchTerm.toLowerCase().trim();
     
-    // If the search box is empty, stop immediately.
+    // Lazy Load: Ask user to search if empty
     if (rawTerm.length === 0) {
         tbody.innerHTML = `<tr>
             <td colspan="9" class="text-center text-muted p-4">
@@ -524,9 +522,9 @@ function renderInventoryTable() {
         return;
     }
 
-    // BREAKTHROUGH: Split search into individual keywords (handles spaces, commas, semicolons)
+    // Smart Keyword logic
     const keywords = rawTerm.split(/[\s;,]+/).filter(kw => kw.length > 0);
-
+    
     let count = 0;
     const MAX_RESULTS = 50; 
     let htmlBuffer = ""; 
@@ -534,10 +532,10 @@ function renderInventoryTable() {
     for(const [code, p] of Object.entries(productDB)) {
         if (count >= MAX_RESULTS) break;
         
-        // Combine all product data into one massive hidden string
+        // Massive hidden string combining all relevant data
         const searchableText = `${code} ${p.name || ''} ${p.category || ''} ${p.company || ''} ${p.specs || ''}`.toLowerCase();
         
-        // Ensure EVERY keyword the user typed exists somewhere in that text
+        // Ensure EVERY keyword exists
         const isMatch = keywords.every(kw => searchableText.includes(kw));
         
         if (!isMatch) continue;
@@ -630,9 +628,7 @@ async function submitProductEdit() {
     await fetchInitData(); // Pull fresh data from server
     
     bootstrap.Modal.getInstance(document.getElementById('fullEditModal')).hide();
-    
-    // Refresh table silently while modal stays open in background
-    renderInventoryTable(); 
+    renderInventoryTable(); // Refresh table silently while modal stays open in background
     
     btn.innerHTML = originalText; 
     btn.disabled = false;
@@ -642,7 +638,7 @@ async function deleteProduct(code) {
     if(confirm(`Are you sure you want to delete Product Code: ${code} from the inventory?`)) {
         await apiPost({action: "deleteProduct", role: USER.role, code: code});
         await fetchInitData(); 
-        renderInventoryTable(); // Refresh table silently
+        renderInventoryTable(); 
     }
 }
 
@@ -728,7 +724,7 @@ function executeExport() {
 }
 
 // -------------------------------------------------------------
-// EVENT LISTENERS FOR FUTURE-PROOF LAZY LOADING
+// GLOBAL EVENT LISTENERS (Virtualization & Smart Searches)
 // -------------------------------------------------------------
 document.addEventListener('DOMContentLoaded', () => {
     
@@ -742,13 +738,12 @@ document.addEventListener('DOMContentLoaded', () => {
         
         if (!dataList) return;
         
-        // Clear list immediately if search box is empty (saves memory)
         if (term.length === 0) {
             dataList.innerHTML = ''; return;
         }
         
         let count = 0;
-        const MAX_OPTIONS = 25; // Prevents dropdown rendering lag
+        const MAX_OPTIONS = 25; 
         let optionsHTML = '';
         const added = new Set();
         
@@ -770,13 +765,13 @@ document.addEventListener('DOMContentLoaded', () => {
         dataList.innerHTML = optionsHTML;
     });
 
-    // 2. INVENTORY MODAL SEARCH LISTENER
+    // 2. INVENTORY MODAL SMART SEARCH LISTENER
     document.getElementById('invSearch').addEventListener('input', function() {
         inventorySearchTerm = this.value;
-        renderInventoryTable(); // Dynamically swaps top 50 items
+        renderInventoryTable();
     });
     
-// 3. MAIN TABLE SEARCH FILTER (Now supports multi-keyword flexible matching)
+    // 3. MAIN TABLE SMART SEARCH FILTER
     document.getElementById('searchInput').addEventListener('input', function() {
         const rawTerm = this.value.toLowerCase().trim();
         const keywords = rawTerm.split(/[\s;,]+/).filter(kw => kw.length > 0);
@@ -784,14 +779,19 @@ document.addEventListener('DOMContentLoaded', () => {
         const rows = document.getElementById('tableBody').getElementsByTagName('tr');
         
         for (let i = 0; i < rows.length; i++) {
-            // Ignore rows that are currently being edited (they have input boxes instead of text)
+            // Ignore rows that are in edit mode
             if (rows[i].classList.contains('table-warning')) continue; 
             
+            // If search is blank, show everything
+            if (keywords.length === 0) {
+                rows[i].style.display = "";
+                continue;
+            }
+
             const rowText = rows[i].innerText.toLowerCase();
             
-            // Check if every keyword typed exists anywhere in the row
+            // Smart Keyword match: ensures every keyword is present anywhere in the row
             const isMatch = keywords.every(kw => rowText.includes(kw));
-            
             rows[i].style.display = isMatch ? "" : "none";
         }
     });
