@@ -511,10 +511,10 @@ function openInventoryModal() {
 
 function renderInventoryTable() {
     const tbody = document.getElementById('invBody');
-    const term = inventorySearchTerm.toLowerCase().trim();
+    const rawTerm = inventorySearchTerm.toLowerCase().trim();
     
-    // NEW: If the search box is empty, do NOT loop the database. Stop immediately.
-    if (term.length === 0) {
+    // If the search box is empty, stop immediately.
+    if (rawTerm.length === 0) {
         tbody.innerHTML = `<tr>
             <td colspan="9" class="text-center text-muted p-4">
                 <i class="bi bi-search fs-4 d-block mb-2 text-secondary"></i>
@@ -524,6 +524,9 @@ function renderInventoryTable() {
         return;
     }
 
+    // BREAKTHROUGH: Split search into individual keywords (handles spaces, commas, semicolons)
+    const keywords = rawTerm.split(/[\s;,]+/).filter(kw => kw.length > 0);
+
     let count = 0;
     const MAX_RESULTS = 50; 
     let htmlBuffer = ""; 
@@ -531,14 +534,13 @@ function renderInventoryTable() {
     for(const [code, p] of Object.entries(productDB)) {
         if (count >= MAX_RESULTS) break;
         
-        const sCode = String(code).toLowerCase();
-        const sName = String(p.name || '').toLowerCase();
-        const sCat = String(p.category || '').toLowerCase();
-        const sComp = String(p.company || '').toLowerCase();
+        // Combine all product data into one massive hidden string
+        const searchableText = `${code} ${p.name || ''} ${p.category || ''} ${p.company || ''} ${p.specs || ''}`.toLowerCase();
         
-        if (!sCode.includes(term) && !sName.includes(term) && !sCat.includes(term) && !sComp.includes(term)) {
-            continue;
-        }
+        // Ensure EVERY keyword the user typed exists somewhere in that text
+        const isMatch = keywords.every(kw => searchableText.includes(kw));
+        
+        if (!isMatch) continue;
         
         let actionBtns = `<button class="btn btn-sm btn-outline-success py-0 px-1 me-1 text-nowrap" onclick="addFromInventory('${code}')" title="Add to List"><i class="bi bi-plus-circle"></i> Add</button>`;
         
@@ -565,7 +567,7 @@ function renderInventoryTable() {
     }
     
     if (count === 0) {
-        htmlBuffer = `<tr><td colspan="9" class="text-center text-danger p-3 fw-bold">No products matched "${term}"</td></tr>`;
+        htmlBuffer = `<tr><td colspan="9" class="text-center text-danger p-3 fw-bold">No products matched "${rawTerm}"</td></tr>`;
     } else if (count === MAX_RESULTS) {
         htmlBuffer += `<tr><td colspan="9" class="text-center text-muted fst-italic bg-light">Showing top ${MAX_RESULTS} results. Keep typing to narrow down...</td></tr>`;
     }
@@ -774,10 +776,23 @@ document.addEventListener('DOMContentLoaded', () => {
         renderInventoryTable(); // Dynamically swaps top 50 items
     });
     
-    // 3. MAIN TABLE SEARCH FILTER
+// 3. MAIN TABLE SEARCH FILTER (Now supports multi-keyword flexible matching)
     document.getElementById('searchInput').addEventListener('input', function() {
-        const f = this.value.toLowerCase();
+        const rawTerm = this.value.toLowerCase().trim();
+        const keywords = rawTerm.split(/[\s;,]+/).filter(kw => kw.length > 0);
+        
         const rows = document.getElementById('tableBody').getElementsByTagName('tr');
-        for (let i=0; i<rows.length; i++) rows[i].style.display = rows[i].innerText.toLowerCase().includes(f) ? "" : "none";
+        
+        for (let i = 0; i < rows.length; i++) {
+            // Ignore rows that are currently being edited (they have input boxes instead of text)
+            if (rows[i].classList.contains('table-warning')) continue; 
+            
+            const rowText = rows[i].innerText.toLowerCase();
+            
+            // Check if every keyword typed exists anywhere in the row
+            const isMatch = keywords.every(kw => rowText.includes(kw));
+            
+            rows[i].style.display = isMatch ? "" : "none";
+        }
     });
 });
