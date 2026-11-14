@@ -58,8 +58,10 @@ async function fetchInitData() {
         const data = await apiPost({action: "getInit", username: USER.username, role: USER.role});
         if(data.status === "success") {
             productDB = data.products; activeLists = data.lists; vendorDB = data.vendors; latestInheritedBudget = data.latestBudget;
+            
+            // Vendors are few, so it's safe to load them all immediately
             document.getElementById('vendorList').innerHTML = vendorDB.map(v => `<option value="${v}">`).join('');
-            populateListDropdown(); updateDatalists();
+            populateListDropdown(); 
         }
     } catch (e) { alert("Failed to fetch initial data."); }
 }
@@ -336,17 +338,6 @@ function handleEnter(e, elem, index) {
     }
 }
 
-function updateDatalists() {
-    const c = new Set(), n = new Set(), comp = new Set(), code = new Set();
-    for (const [cd, p] of Object.entries(productDB)) {
-        if (p.category) c.add(p.category); code.add(cd); if(p.name) n.add(p.name); if(p.company) comp.add(p.company);
-    }
-    document.getElementById('categoryList').innerHTML = [...c].map(x=>`<option value="${x}">`).join('');
-    document.getElementById('codeList').innerHTML = [...code].map(x=>`<option value="${x}">`).join('');
-    document.getElementById('nameList').innerHTML = [...n].map(x=>`<option value="${x}">`).join('');
-    document.getElementById('companyList').innerHTML = [...comp].map(x=>`<option value="${x}">`).join('');
-}
-
 function fillRowByData(elem, index) {
     const tr = elem.closest('tr');
     const cVal = tr.querySelector('.pCode').value.trim();
@@ -436,7 +427,6 @@ async function syncTableToBackend() {
         const initRes = await apiPost({action: "getInit", username: USER.username, role: USER.role});
         productDB = initRes.products; vendorDB = initRes.vendors;
         document.getElementById('vendorList').innerHTML = vendorDB.map(v => `<option value="${v}">`).join('');
-        updateDatalists();
         renderTable();
     } catch(e) {
         alert("Failed to sync list to server.");
@@ -506,11 +496,37 @@ async function saveListSettings() {
     fetchInitData();
 }
 
-// -- Inventory Management --
+// -- FUTURE PROOF INVENTORY MANAGEMENT (VIRTUALIZED) --
+let inventorySearchTerm = "";
+
 function openInventoryModal() {
+    inventorySearchTerm = "";
+    document.getElementById('invSearch').value = "";
+    renderInventoryTable();
+    new bootstrap.Modal(document.getElementById('inventoryModal')).show();
+}
+
+function renderInventoryTable() {
     const tbody = document.getElementById('invBody');
     tbody.innerHTML = '';
+    
+    const term = inventorySearchTerm.toLowerCase().trim();
+    let count = 0;
+    const MAX_RESULTS = 50; // Strict cap to prevent screen freezing 
+    
     for(const [code, p] of Object.entries(productDB)) {
+        if (count >= MAX_RESULTS) break;
+        
+        // Fast filtering
+        if (term) {
+            if (!code.toLowerCase().includes(term) && 
+                !(p.name && p.name.toLowerCase().includes(term)) &&
+                !(p.category && p.category.toLowerCase().includes(term)) &&
+                !(p.company && p.company.toLowerCase().includes(term))) {
+                continue;
+            }
+        }
+        
         let actionBtns = `<button class="btn btn-sm btn-outline-success py-0 px-1 me-1 text-nowrap" onclick="addFromInventory('${code}')" title="Add to List"><i class="bi bi-plus-circle"></i> Add</button>`;
         
         if (USER.role === "Admin" || USER.role === "Lab Supervisor") {
@@ -520,15 +536,25 @@ function openInventoryModal() {
             actionBtns += `<span class="text-muted small ms-1">View Only</span>`;
         }
         tbody.innerHTML += `<tr><td>${code}</td><td class="text-wrap" style="min-width:150px;">${p.name}</td><td>${p.category||''}</td><td>${p.company||''}</td><td class="text-wrap" style="min-width:200px;">${p.specs||''}</td><td>${p.minQty||1}</td><td>${p.unit||''}</td><td>${p.compPrice||''}</td><td class="text-center text-nowrap">${actionBtns}</td></tr>`;
+        
+        count++;
     }
-    new bootstrap.Modal(document.getElementById('inventoryModal')).show();
+    
+    // Status indicators if database is huge
+    if (count === 0) {
+        tbody.innerHTML = `<tr><td colspan="9" class="text-center text-muted p-3">No products found.</td></tr>`;
+    } else if (count === MAX_RESULTS) {
+        tbody.innerHTML += `<tr><td colspan="9" class="text-center text-muted fst-italic bg-light">Showing top ${MAX_RESULTS} results. Keep typing to filter more...</td></tr>`;
+    }
 }
 
 function addFromInventory(code) {
     if (!document.getElementById('listSelector').value) return alert("Please select or create a list first.");
     const p = productDB[code]; if (!p) return;
     if (currentListData.findIndex((r) => r['Product Code'] === code && r['Company'] === p.company && !r._isEditing) > -1) {
-        alert("This product is already in the current list! You can edit its quantity in the table."); bootstrap.Modal.getInstance(document.getElementById('inventoryModal')).hide(); return;
+        alert("This product is already in the current list! You can edit its quantity in the table."); 
+        bootstrap.Modal.getInstance(document.getElementById('inventoryModal')).hide(); 
+        return;
     }
 
     let newRow = {
@@ -545,7 +571,6 @@ function addFromInventory(code) {
     const tContainer = document.querySelector('.table-responsive'); tContainer.scrollTop = tContainer.scrollHeight;
 }
 
-// FIXED: Explicitly await Data Refresh and re-open modal
 function openEditProduct(code) {
     const p = productDB[code];
     document.getElementById('editOrigCode').value = code;
@@ -571,23 +596,16 @@ async function submitProductEdit() {
     const code = document.getElementById('editOrigCode').value;
     const payload = {
         action: "updateProduct", role: USER.role, 
-        product: { 
-            code: code, name: document.getElementById('editName').value, category: document.getElementById('editCat').value, 
-            company: document.getElementById('editComp').value, specs: document.getElementById('editSpecs').value, 
-            compPrice: document.getElementById('editPrice').value, minQty: document.getElementById('editMin').value, 
-            unit: document.getElementById('editUnit').value 
-        }
+        product: { code: code, name: document.getElementById('editName').value, category: document.getElementById('editCat').value, company: document.getElementById('editComp').value, specs: document.getElementById('editSpecs').value, compPrice: document.getElementById('editPrice').value, minQty: document.getElementById('editMin').value, unit: document.getElementById('editUnit').value }
     };
     
-    // Send to database
     await apiPost(payload);
+    await fetchInitData(); // Pull fresh data from server
     
-    // STRICTLY WAIT for the local data to refresh before doing anything else
-    await fetchInitData(); 
-    
-    // Close edit box and instantly reopen the refreshed inventory
     bootstrap.Modal.getInstance(document.getElementById('fullEditModal')).hide();
-    openInventoryModal(); 
+    
+    // Refresh table silently while modal stays open in background
+    renderInventoryTable(); 
     
     btn.innerHTML = originalText; 
     btn.disabled = false;
@@ -596,20 +614,10 @@ async function submitProductEdit() {
 async function deleteProduct(code) {
     if(confirm(`Are you sure you want to delete Product Code: ${code} from the inventory?`)) {
         await apiPost({action: "deleteProduct", role: USER.role, code: code});
-        
-        // STRICTLY WAIT for data to refresh locally
         await fetchInitData(); 
-        
-        // Refresh the modal view
-        openInventoryModal(); 
+        renderInventoryTable(); // Refresh table silently
     }
 }
-
-document.getElementById('invSearch').addEventListener('keyup', function() {
-    const f = this.value.toLowerCase();
-    const rows = document.getElementById('invBody').getElementsByTagName('tr');
-    for(let i=0; i<rows.length; i++) rows[i].style.display = rows[i].innerText.toLowerCase().includes(f) ? "" : "none";
-});
 
 // -- User Management --
 async function openUsersModal() {
@@ -623,11 +631,13 @@ async function openUsersModal() {
         new bootstrap.Modal(document.getElementById('usersModal')).show();
     }
 }
+
 document.getElementById('addUserForm').addEventListener('submit', async function(e) {
     e.preventDefault();
     const res = await apiPost({action: "manageUsers", subAction: "add", role: USER.role, newUser: document.getElementById('newUName').value.trim(), newPass: document.getElementById('newUPass').value.trim(), newRole: document.getElementById('newURole').value});
     if(res.status === "success") { e.target.reset(); openUsersModal(); } else alert(res.message);
 });
+
 async function deleteUser(username) {
     if(confirm(`Delete user ${username}?`)) {
         await apiPost({action: "manageUsers", subAction: "delete", role: USER.role, targetUser: username});
@@ -690,8 +700,59 @@ function executeExport() {
     }
 }
 
-document.getElementById('searchInput').addEventListener('keyup', function() {
-    const f = this.value.toLowerCase();
-    const rows = document.getElementById('tableBody').getElementsByTagName('tr');
-    for (let i=0; i<rows.length; i++) rows[i].style.display = rows[i].innerText.toLowerCase().includes(f) ? "" : "none";
+// -------------------------------------------------------------
+// EVENT LISTENERS FOR FUTURE-PROOF LAZY LOADING
+// -------------------------------------------------------------
+document.addEventListener('DOMContentLoaded', () => {
+    
+    // 1. DYNAMIC DATALISTS (Only populates top 25 matches exactly when you type)
+    document.getElementById('tableBody').addEventListener('input', function(e) {
+        if (!e.target.matches('input[list], textarea[list]')) return;
+        
+        const term = e.target.value.toLowerCase().trim();
+        const listId = e.target.getAttribute('list');
+        const dataList = document.getElementById(listId);
+        
+        if (!dataList) return;
+        
+        // Clear list immediately if search box is empty (saves memory)
+        if (term.length === 0) {
+            dataList.innerHTML = ''; return;
+        }
+        
+        let count = 0;
+        const MAX_OPTIONS = 25; // Prevents dropdown rendering lag
+        let optionsHTML = '';
+        const added = new Set();
+        
+        for (const [code, p] of Object.entries(productDB)) {
+            if (count >= MAX_OPTIONS) break;
+            
+            let valToAdd = null;
+            if (listId === 'codeList' && code.toLowerCase().includes(term)) valToAdd = code;
+            else if (listId === 'nameList' && p.name && p.name.toLowerCase().includes(term)) valToAdd = p.name;
+            else if (listId === 'categoryList' && p.category && p.category.toLowerCase().includes(term)) valToAdd = p.category;
+            else if (listId === 'companyList' && p.company && p.company.toLowerCase().includes(term)) valToAdd = p.company;
+            
+            if (valToAdd && !added.has(valToAdd)) {
+                added.add(valToAdd);
+                optionsHTML += `<option value="${valToAdd}">`;
+                count++;
+            }
+        }
+        dataList.innerHTML = optionsHTML;
+    });
+
+    // 2. INVENTORY MODAL SEARCH LISTENER
+    document.getElementById('invSearch').addEventListener('input', function() {
+        inventorySearchTerm = this.value;
+        renderInventoryTable(); // Dynamically swaps top 50 items
+    });
+    
+    // 3. MAIN TABLE SEARCH FILTER
+    document.getElementById('searchInput').addEventListener('input', function() {
+        const f = this.value.toLowerCase();
+        const rows = document.getElementById('tableBody').getElementsByTagName('tr');
+        for (let i=0; i<rows.length; i++) rows[i].style.display = rows[i].innerText.toLowerCase().includes(f) ? "" : "none";
+    });
 });
