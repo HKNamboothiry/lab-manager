@@ -23,7 +23,6 @@
         th { white-space: nowrap; }
         .specs-col { min-width: 250px; }
         
-        /* Adjusted Frozen Columns */
         thead th { position: sticky; top: 0; z-index: 2; background-color: #212529 !important; color: white;}
         .sticky-col-0 { position: sticky; left: 0px;   min-width: 50px;  max-width: 50px;  z-index: 1; }
         .sticky-col-1 { position: sticky; left: 50px;  min-width: 80px;  max-width: 80px;  z-index: 1; }
@@ -67,7 +66,7 @@
                         <li><a class="dropdown-item" href="#" onclick="openExportModal('print')"><i class="bi bi-printer"></i> Print</a></li>
                     </ul>
                 </div>
-                <button class="btn btn-dark shadow-sm" onclick="openInventoryModal()"><i class="bi bi-boxes"></i> Search / Edit Product Inventory</button>
+                <button class="btn btn-dark shadow-sm" onclick="openInventoryModal()"><i class="bi bi-boxes"></i> Search / Edit DB</button>
                 <button class="btn btn-outline-primary shadow-sm bg-body" id="btnUsers" onclick="openUsersModal()" style="display:none;"><i class="bi bi-people-fill"></i> Users</button>
             </div>
             <div class="nav-user text-end d-flex flex-column align-items-end me-3">
@@ -80,6 +79,7 @@
 
     <div class="container-fluid">
         <datalist id="itemList"></datalist>
+        <datalist id="specsList"></datalist>
         <datalist id="compList"></datalist>
 
         <div class="d-flex justify-content-between mb-2 align-items-center">
