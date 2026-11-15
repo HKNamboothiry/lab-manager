@@ -4,61 +4,36 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dr. Nimmi Das Lab - Purchase Management</title>
-    
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
-    
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
-    
     <style>
-        :root { 
-            --glass-bg: rgba(255, 255, 255, 0.7); 
-            --glass-bottom-bg: rgba(232, 245, 233, 0.8);
-            --glass-blur: blur(12px); 
-            --body-grad: linear-gradient(135deg, #fdfbfb 0%, #ebedee 100%);
-            --login-grad: linear-gradient(135deg, #e3f2fd, #bbdefb);
-            --login-card-bg: rgba(255, 255, 255, 0.6);
-            --cell-bg: #ffffff;
-            --cell-hover: #ececec;
-        }
-
+        :root { --glass-bg: rgba(255, 255, 255, 0.7); --glass-bottom-bg: rgba(232, 245, 233, 0.8); --glass-blur: blur(12px); --body-grad: linear-gradient(135deg, #fdfbfb 0%, #ebedee 100%); --login-grad: linear-gradient(135deg, #e3f2fd, #bbdefb); --login-card-bg: rgba(255, 255, 255, 0.6); --cell-bg: #ffffff; --cell-hover: #ececec; }
         body { background: var(--body-grad); font-size: 0.95rem; min-height: 100vh; margin: 0; }
         #appContainer { display: none; padding-bottom: 90px; } 
-        
-        /* Glassmorphism Login Background */
         .login-wrapper { position: relative; height: 100vh; display: flex; align-items: center; justify-content: center; overflow: hidden; background: var(--login-grad); }
-        .shape-1 { position: absolute; top: -50px; left: -50px; width: 400px; height: 400px; background: rgba(100, 150, 250, 0.4); border-radius: 50%; filter: blur(60px); z-index: 1;}
-        .shape-2 { position: absolute; bottom: -50px; right: -50px; width: 400px; height: 400px; background: rgba(250, 100, 150, 0.3); border-radius: 50%; filter: blur(70px); z-index: 1;}
-        .login-card { position: relative; z-index: 2; background: var(--login-card-bg); backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur); border: 1px solid rgba(255,255,255,0.2); padding: 40px; border-radius: 16px; box-shadow: 0 8px 32px rgba(0,0,0,0.1); width: 100%; max-width: 400px; }
-        
-        /* Fixed Glass Panels */
-        .glass-top { position: sticky; top: 0; z-index: 1040; background: var(--glass-bg) !important; backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur); border-bottom: 1px solid rgba(255,255,255,0.1); box-shadow: 0 4px 6px rgba(0,0,0,0.02); }
-        .glass-bottom { position: fixed; bottom: 0; left: 0; right: 0; z-index: 1040; background: var(--glass-bottom-bg); backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur); border-top: 1px solid rgba(255,255,255,0.1); padding: 15px; box-shadow: 0 -4px 6px rgba(0,0,0,0.02); margin: 0 !important; }
-        
+        .login-card { position: relative; z-index: 2; background: var(--login-card-bg); backdrop-filter: var(--glass-blur); padding: 40px; border-radius: 16px; box-shadow: 0 8px 32px rgba(0,0,0,0.1); width: 100%; max-width: 400px; }
+        .glass-top { position: sticky; top: 0; z-index: 1040; background: var(--glass-bg) !important; backdrop-filter: var(--glass-blur); border-bottom: 1px solid rgba(255,255,255,0.1); box-shadow: 0 4px 6px rgba(0,0,0,0.02); }
+        .glass-bottom { position: fixed; bottom: 0; left: 0; right: 0; z-index: 1040; background: var(--glass-bottom-bg); backdrop-filter: var(--glass-blur); border-top: 1px solid rgba(255,255,255,0.1); padding: 15px; box-shadow: 0 -4px 6px rgba(0,0,0,0.02); }
         .nav-user { line-height: 1.2; border-left: 2px solid #6c757d; padding-left: 15px; }
 
         .table-responsive { background: var(--cell-bg); border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); max-height: calc(100vh - 250px); overflow: auto; }
         th { white-space: nowrap; }
         .specs-col { min-width: 250px; }
-        .name-col { min-width: 200px; }
         
-        /* Frozen Columns */
+        /* Adjusted Frozen Columns */
         thead th { position: sticky; top: 0; z-index: 2; background-color: #212529 !important; color: white;}
         .sticky-col-0 { position: sticky; left: 0px;   min-width: 50px;  max-width: 50px;  z-index: 1; }
         .sticky-col-1 { position: sticky; left: 50px;  min-width: 80px;  max-width: 80px;  z-index: 1; }
-        .sticky-col-2 { position: sticky; left: 130px; min-width: 100px; max-width: 100px; z-index: 1; }
-        .sticky-col-3 { position: sticky; left: 230px; min-width: 200px; max-width: 200px; z-index: 1; }
-        .sticky-col-4 { position: sticky; left: 430px; min-width: 120px; max-width: 120px; z-index: 1; border-right: 2px solid #6c757d; }
-        
-        thead .sticky-col-0, thead .sticky-col-1, thead .sticky-col-2, thead .sticky-col-3, thead .sticky-col-4 { z-index: 3 !important; }
-        
-        tbody tr td.sticky-col-0, tbody tr td.sticky-col-1, tbody tr td.sticky-col-2, tbody tr td.sticky-col-3, tbody tr td.sticky-col-4 { background-color: var(--cell-bg); }
-        tbody tr:hover td.sticky-col-0, tbody tr:hover td.sticky-col-1, tbody tr:hover td.sticky-col-2, tbody tr:hover td.sticky-col-3, tbody tr:hover td.sticky-col-4 { background-color: var(--cell-hover); }
-        tbody tr.table-warning td.sticky-col-0, tbody tr.table-warning td.sticky-col-1, tbody tr.table-warning td.sticky-col-2, tbody tr.table-warning td.sticky-col-3, tbody tr.table-warning td.sticky-col-4 { background-color: transparent; }
+        .sticky-col-2 { position: sticky; left: 130px; min-width: 180px; max-width: 180px; z-index: 1; border-right: 2px solid #6c757d; }
+        thead .sticky-col-0, thead .sticky-col-1, thead .sticky-col-2 { z-index: 3 !important; }
+        tbody tr td.sticky-col-0, tbody tr td.sticky-col-1, tbody tr td.sticky-col-2 { background-color: var(--cell-bg); }
+        tbody tr:hover td.sticky-col-0, tbody tr:hover td.sticky-col-1, tbody tr:hover td.sticky-col-2 { background-color: var(--cell-hover); }
+        tbody tr.table-warning td.sticky-col-0, tbody tr.table-warning td.sticky-col-1, tbody tr.table-warning td.sticky-col-2 { background-color: transparent; }
 
-        .number-box { width: 70px; padding: 0.25rem; }
+        .number-box { width: 80px; padding: 0.25rem; }
         .vendor-cell { min-width: 150px; }
         #invTable thead th { position: static; z-index: auto; background-color: #e9ecef !important; color: #000; }
     </style>
@@ -66,8 +41,6 @@
 <body>
 
 <div id="loginScreen" class="login-wrapper">
-    <div class="shape-1"></div>
-    <div class="shape-2"></div>
     <div class="login-card text-center">
         <i class="bi bi-shield-lock-fill text-primary mb-2" style="font-size: 3rem;"></i>
         <h4 class="mb-4 fw-bold">Dr. Nimmi Das Lab<br><small class="text-muted fw-normal" style="font-size: 1rem;">Purchase Portal</small></h4>
@@ -82,28 +55,21 @@
     <nav class="navbar navbar-expand-lg glass-top mb-3">
         <div class="container-fluid">
             <span class="navbar-brand fw-bold text-primary"><i class="bi bi-diagram-3"></i> Lab Management</span>
-            
             <div class="d-flex align-items-center ms-4 me-auto gap-3">
-                <select id="listSelector" class="form-select w-auto fw-bold shadow-sm bg-body" onchange="handleListChange()">
-                    <option value="" disabled selected>Select a List...</option>
-                </select>
+                <select id="listSelector" class="form-select w-auto fw-bold shadow-sm bg-body" onchange="handleListChange()"><option value="" disabled selected>Select a List...</option></select>
                 <button class="btn btn-sm btn-outline-secondary shadow-sm bg-body" onclick="manageList()"><i class="bi bi-gear"></i> Setup List</button>
-                
                 <div class="dropdown">
                     <button class="btn btn-success dropdown-toggle shadow-sm" type="button" data-bs-toggle="dropdown"><i class="bi bi-box-arrow-right"></i> Export</button>
                     <ul class="dropdown-menu">
                         <li><a class="dropdown-item" href="#" onclick="openExportModal('excel')"><i class="bi bi-file-earmark-excel"></i> Excel File</a></li>
                         <li><a class="dropdown-item" href="#" onclick="openExportModal('csv')"><i class="bi bi-filetype-csv"></i> CSV File</a></li>
                         <li><a class="dropdown-item" href="#" onclick="openExportModal('pdf')"><i class="bi bi-file-earmark-pdf"></i> PDF Document</a></li>
-                        <li><hr class="dropdown-divider"></li>
                         <li><a class="dropdown-item" href="#" onclick="openExportModal('print')"><i class="bi bi-printer"></i> Print</a></li>
                     </ul>
                 </div>
-                
                 <button class="btn btn-dark shadow-sm" onclick="openInventoryModal()"><i class="bi bi-boxes"></i> Search / Edit Product Inventory</button>
                 <button class="btn btn-outline-primary shadow-sm bg-body" id="btnUsers" onclick="openUsersModal()" style="display:none;"><i class="bi bi-people-fill"></i> Users</button>
             </div>
-
             <div class="nav-user text-end d-flex flex-column align-items-end me-3">
                 <span class="fw-bold"><i class="bi bi-person-circle"></i> <span id="uiUsername">User</span></span>
                 <small class="text-muted" id="uiRole">Role</small>
@@ -113,11 +79,8 @@
     </nav>
 
     <div class="container-fluid">
-        <datalist id="categoryList"></datalist>
-        <datalist id="nameList"></datalist>
-        <datalist id="companyList"></datalist>
-        <datalist id="codeList"></datalist>
-        <datalist id="vendorList"></datalist>
+        <datalist id="itemList"></datalist>
+        <datalist id="compList"></datalist>
 
         <div class="d-flex justify-content-between mb-2 align-items-center">
             <div>
@@ -125,7 +88,6 @@
                 <button class="btn btn-info fw-bold shadow-sm ms-2 text-white" onclick="openAddVendorModal()"><i class="bi bi-shop"></i> Add Vendor</button>
                 <button class="btn btn-secondary fw-bold shadow-sm ms-2" onclick="optimizeVendors()"><i class="bi bi-magic"></i> Optimize Plan</button>
             </div>
-            
             <div>
                 <button class="btn btn-warning btn-sm fw-bold me-2 shadow-sm" onclick="saveTableEdits()" id="btnSaveEdits"><i class="bi bi-floppy"></i> Save Table Edits</button>
                 <input type="text" id="searchInput" class="form-control form-control-sm d-inline-block shadow-sm bg-body" style="width:250px;" placeholder="Filter table...">
@@ -134,8 +96,7 @@
         
         <div class="table-responsive mb-3 clear-both w-100">
             <table class="table table-bordered table-sm table-hover mb-0" id="purchaseTable">
-                <thead class="table-dark" id="tableHead">
-                </thead>
+                <thead class="table-dark" id="tableHead"></thead>
                 <tbody id="tableBody"></tbody>
             </table>
         </div>
@@ -162,81 +123,63 @@
     </div>
 </div>
 
-<!-- Add Vendor Modal -->
+<!-- Modals -->
 <div class="modal fade" id="addVendorModal" tabindex="-1">
-  <div class="modal-dialog modal-sm">
-    <div class="modal-content">
+  <div class="modal-dialog modal-sm"><div class="modal-content">
       <div class="modal-header"><h5 class="modal-title"><i class="bi bi-shop"></i> Add Vendor</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
-      <div class="modal-body">
-        <label class="form-label small">Select or Type Vendor Name</label>
-        <input type="text" id="newVendorName" list="vendorList" class="form-control">
-      </div>
+      <div class="modal-body"><label class="form-label small">Vendor Name</label><input type="text" id="newVendorName" class="form-control"></div>
       <div class="modal-footer"><button class="btn btn-info text-white w-100 fw-bold" onclick="confirmAddVendor()">Add to Table</button></div>
-    </div>
-  </div>
+  </div></div>
 </div>
 
-<!-- List Setup Modal -->
 <div class="modal fade" id="listModal" tabindex="-1">
-  <div class="modal-dialog">
-    <div class="modal-content">
+  <div class="modal-dialog"><div class="modal-content">
       <div class="modal-header"><h5 class="modal-title"><i class="bi bi-gear"></i> List Setup</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
       <div class="modal-body">
         <label class="fw-bold mb-1">Rename List</label>
         <div class="d-flex gap-2 mb-3"><input type="text" id="listRename" class="form-control"><button class="btn btn-primary" onclick="renameList()">Rename</button></div><hr>
-        <label class="fw-bold mb-1"><i class="bi bi-people"></i> Collaborators (usernames, comma separated)</label>
+        <label class="fw-bold mb-1"><i class="bi bi-people"></i> Collaborators</label>
         <input type="text" id="listCollabs" class="form-control mb-3"><button class="btn btn-success w-100 mb-3" onclick="saveListSettings()">Save Collaborators</button><hr>
         <button class="btn btn-outline-danger w-100" onclick="deleteList()"><i class="bi bi-trash"></i> Delete This List Completely</button>
       </div>
-    </div>
-  </div>
+  </div></div>
 </div>
 
-<!-- Inventory Edit Modal -->
 <div class="modal fade" id="fullEditModal" tabindex="-1">
-  <div class="modal-dialog">
-    <div class="modal-content">
-      <div class="modal-header"><h5 class="modal-title">Edit Product Details</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-dialog"><div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title">Edit Master Product Info</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
       <div class="modal-body">
-        <input type="hidden" id="editOrigCode">
-        <div class="mb-2"><label class="form-label small">Code</label><input type="text" id="editCode" class="form-control" disabled></div>
-        <div class="mb-2"><label class="form-label small">Name</label><textarea id="editName" class="form-control" rows="2"></textarea></div>
-        <div class="mb-2"><label class="form-label small">Category</label><input type="text" id="editCat" class="form-control"></div>
-        <div class="mb-2"><label class="form-label small">Company</label><input type="text" id="editComp" class="form-control"></div>
-        <div class="mb-2"><label class="form-label small">Specifications</label><textarea id="editSpecs" class="form-control" rows="3"></textarea></div>
+        <input type="hidden" id="editDbId">
+        <div class="mb-2"><label class="form-label small">Item</label><input type="text" id="editItem" class="form-control fw-bold"></div>
+        <div class="mb-2"><label class="form-label small">Item Specs</label><textarea id="editSpecs" class="form-control" rows="2"></textarea></div>
+        <div class="mb-2"><label class="form-label small">Preferred Company</label><input type="text" id="editComp" class="form-control" placeholder="Any" oninput="toggleModalCode()"></div>
+        <div class="mb-2"><label class="form-label small">Product Code</label><input type="text" id="editCode" class="form-control" disabled></div>
         <div class="row mb-2">
-            <div class="col"><label class="form-label small">Min Qty</label><input type="number" id="editMin" class="form-control"></div>
             <div class="col"><label class="form-label small">Unit</label><input type="text" id="editUnit" class="form-control"></div>
+            <div class="col"><label class="form-label small">Est. Price</label><input type="number" step="0.01" id="editPrice" class="form-control"></div>
         </div>
-        <div class="mb-2"><label class="form-label small">Est. Price</label><input type="number" step="0.01" id="editPrice" class="form-control"></div>
       </div>
-      <div class="modal-footer"><button class="btn btn-success w-100" onclick="submitProductEdit()"><i class="bi bi-floppy"></i> Save Info</button></div>
-    </div>
-  </div>
+      <div class="modal-footer"><button class="btn btn-success w-100" onclick="submitProductEdit()"><i class="bi bi-floppy"></i> Save to DB</button></div>
+  </div></div>
 </div>
 
-<!-- Inventory Modal -->
 <div class="modal fade" id="inventoryModal" tabindex="-1">
-  <div class="modal-dialog modal-xl modal-dialog-scrollable">
-    <div class="modal-content">
-      <div class="modal-header bg-body-tertiary"><h5 class="modal-title"><i class="bi bi-boxes"></i> Product Inventory</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-dialog modal-xl modal-dialog-scrollable"><div class="modal-content">
+      <div class="modal-header bg-body-tertiary"><h5 class="modal-title"><i class="bi bi-boxes"></i> Product Inventory DB</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
       <div class="modal-body">
-        <input type="text" id="invSearch" class="form-control mb-3" placeholder="Search Database...">
+        <input type="text" id="invSearch" class="form-control mb-3" placeholder="Search Database (e.g. Borosil Beaker 5mL)...">
         <div class="table-responsive" style="max-height: 50vh;">
             <table class="table table-sm table-bordered" id="invTable">
-                <thead class="table-secondary"><tr><th>Code</th><th>Name</th><th>Category</th><th>Company</th><th>Specs</th><th>Min Qty</th><th>Unit</th><th>Price</th><th>Action</th></tr></thead>
+                <thead class="table-secondary"><tr><th>Item</th><th>Specs</th><th>Pref. Company</th><th>Code</th><th>Unit</th><th>Est. Price</th><th>Action</th></tr></thead>
                 <tbody id="invBody"></tbody>
             </table>
         </div>
       </div>
-    </div>
-  </div>
+  </div></div>
 </div>
 
-<!-- User Management Modal -->
 <div class="modal fade" id="usersModal" tabindex="-1">
-  <div class="modal-dialog modal-lg">
-    <div class="modal-content">
+  <div class="modal-dialog modal-lg"><div class="modal-content">
       <div class="modal-header bg-body-tertiary"><h5 class="modal-title"><i class="bi bi-people-fill"></i> User Management</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
       <div class="modal-body">
         <form id="addUserForm" class="row g-2 mb-4">
@@ -255,26 +198,20 @@
         </form>
         <table class="table table-sm table-bordered"><thead class="table-dark"><tr><th>Username</th><th>Role</th><th>Action</th></tr></thead><tbody id="usersBody"></tbody></table>
       </div>
-    </div>
-  </div>
+  </div></div>
 </div>
 
-<!-- Export Modal -->
 <div class="modal fade" id="exportModal" tabindex="-1">
-  <div class="modal-dialog modal-sm">
-    <div class="modal-content">
+  <div class="modal-dialog modal-sm"><div class="modal-content">
       <div class="modal-header"><h6 class="modal-title">Export Settings</h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
       <div class="modal-body">
           <label class="form-label fw-bold">Select Vendor to Export</label>
-          <select id="exportVendorSelect" class="form-select mb-3" onchange="renderExportCheckboxes()">
-              <option value="ALL">Master List (All Active)</option>
-          </select>
+          <select id="exportVendorSelect" class="form-select mb-3" onchange="renderExportCheckboxes()"><option value="ALL">Master List</option></select>
           <label class="form-label fw-bold">Select Columns</label>
           <div id="exportColCheckboxes"></div>
       </div>
       <div class="modal-footer p-1"><button class="btn btn-success btn-sm w-100 fw-bold" onclick="executeExport()">Confirm Export</button></div>
-    </div>
-  </div>
+  </div></div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
