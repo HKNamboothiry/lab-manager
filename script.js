@@ -1,4 +1,4 @@
-const API_URL = "https://script.google.com/macros/s/AKfycbwet17KJDzMQl0FlMOaqB8M0otVWCckd9DEnq4vlnvmOHRix1HBNaYpaVRtxYM6r2Y/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbxkDBmVRgyuB8yKgLxx_-qAuQNI9z2xOEd-pzGt4QzNhXJ1aOc0WfDtENvxkYguRK9l/exec"; // Do not forget to paste your new Apps Script URL here!
     
 let USER = null;
 let productDB = {};
@@ -9,7 +9,7 @@ let vendorDB = [];
 let latestInheritedBudget = 0;
 let currentExportType = "";
 
-const BASE_HEADERS = ["SL No", "Product Code", "Product Name", "Category", "Company", "Company Specs", "Min Qty", "Qty", "Unit", "Company Price", "Selected Vendor", "Final Price"];
+const BASE_HEADERS = ["SL No", "Item", "Item Specs", "Preferred Company", "Product Code", "Required Quantity", "Unit", "Estimated Price", "Selected Vendor", "Total Estimate"];
 
 async function apiPost(payload) {
     const res = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(payload) });
@@ -22,18 +22,16 @@ async function verifyLogin() {
     const u = document.getElementById('username').value.trim();
     const p = document.getElementById('password').value;
     const btn = document.getElementById('loginBtn');
-    const err = document.getElementById('loginError');
     if (!u || !p) return;
-
-    btn.innerText = "Verifying..."; btn.disabled = true; err.style.display = 'none';
+    btn.innerText = "Verifying..."; btn.disabled = true;
     try {
         const data = await apiPost({action: "login", username: u, password: p});
         if (data.status === "success") {
             USER = { username: u, role: data.role };
             sessionStorage.setItem("user", JSON.stringify(USER));
             showApp();
-        } else { err.innerText = data.message; err.style.display = 'block'; }
-    } catch (e) { err.innerText = "Connection error."; err.style.display = 'block'; } 
+        } else alert("Invalid credentials.");
+    } catch (e) { alert("Connection error."); } 
     finally { btn.innerText = "Login"; btn.disabled = false; }
 }
 
@@ -58,7 +56,6 @@ async function fetchInitData() {
         const data = await apiPost({action: "getInit", username: USER.username, role: USER.role});
         if(data.status === "success") {
             productDB = data.products; activeLists = data.lists; vendorDB = data.vendors; latestInheritedBudget = data.latestBudget;
-            document.getElementById('vendorList').innerHTML = vendorDB.map(v => `<option value="${v}">`).join('');
             populateListDropdown(); 
         }
     } catch (e) { alert("Failed to fetch initial data."); }
@@ -71,11 +68,8 @@ function populateListDropdown() {
     sel.innerHTML += `<option value="_NEW_" class="text-primary fw-bold">+ Create New List</option>`;
     
     const curr = sel.getAttribute('data-curr');
-    if (curr && activeLists.find(x => x.name === curr)) {
-        sel.value = curr; handleListChange();
-    } else if(activeLists.length > 0) { 
-        sel.value = activeLists[0].name; handleListChange(); 
-    }
+    if (curr && activeLists.find(x => x.name === curr)) { sel.value = curr; handleListChange(); } 
+    else if(activeLists.length > 0) { sel.value = activeLists[0].name; handleListChange(); }
 }
 
 async function handleListChange() {
@@ -99,23 +93,25 @@ async function handleListChange() {
 
     try {
         const payload = await apiPost({action: "getListData", listName: val});
-        
-        if (Array.isArray(payload)) {
-            currentListData = payload;
-            activeVendors = [];
-        } else {
+        if (Array.isArray(payload)) { currentListData = payload; activeVendors = []; } 
+        else {
             let fetchedHeaders = payload.headers || BASE_HEADERS;
-            let finalPriceIdx = fetchedHeaders.indexOf("Final Price");
+            let finalPriceIdx = fetchedHeaders.indexOf("Total Estimate");
             activeVendors = (finalPriceIdx > -1 && finalPriceIdx < fetchedHeaders.length - 1) ? fetchedHeaders.slice(finalPriceIdx + 1) : [];
             currentListData = payload.rows || [];
         }
-        
         currentListData.forEach(r => { r._isEditing = false; });
         renderTable();
-    } catch (e) { 
-        console.error("Data Load Error:", e);
-        document.getElementById('tableBody').innerHTML = '<tr><td colspan="20" class="text-danger text-center fw-bold">Load failed. Please verify API deployment.</td></tr>'; 
-    }
+    } catch (e) { document.getElementById('tableBody').innerHTML = '<tr><td colspan="20" class="text-danger text-center">Load failed.</td></tr>'; }
+}
+
+// Logic to disable code if Any
+function toggleCode(elem) {
+    const tr = elem.closest('tr');
+    const codeInput = tr.querySelector('.pCode');
+    const val = elem.value.trim().toLowerCase();
+    if (val === 'any' || val === '') { codeInput.value = ''; codeInput.disabled = true; } 
+    else codeInput.disabled = false;
 }
 
 function renderTable() {
@@ -124,17 +120,15 @@ function renderTable() {
     thead.innerHTML = `<tr>
         <th class="sticky-col-0">SL No</th>
         <th class="sticky-col-1 text-center">Action</th>
-        <th class="sticky-col-2">Code</th>
-        <th class="sticky-col-3">Name</th>
-        <th class="sticky-col-4">Category</th>
-        <th>Company</th>
-        <th class="specs-col">Specifications</th>
-        <th>Min Qty</th>
+        <th class="sticky-col-2">Item</th>
+        <th class="specs-col">Item Specs</th>
+        <th>Preferred Company</th>
+        <th>Product Code</th>
         <th>Req Qty</th>
         <th>Unit</th>
         <th>Est Price</th>
         <th>Selected Vendor</th>
-        <th class="text-success">Final Price</th>
+        <th class="text-success">Total Estimate</th>
         ${vendorHeaders}
     </tr>`;
 
@@ -143,12 +137,11 @@ function renderTable() {
     let total = 0;
     
     currentListData.forEach((row, i) => {
-        const mQty = productDB[row['Product Code']] ? productDB[row['Product Code']].minQty : (row['Min Qty'] || 1);
-        const qty = parseFloat(row['Qty']) || 0;
-        const price = parseFloat(row['Final Price']) || 0;
+        const qty = parseFloat(row['Required Quantity']) || 0;
+        const totalEst = parseFloat(row['Total Estimate']) || 0;
         
         if(!row._isEditing) {
-            total += (qty * price);
+            total += totalEst;
             let selVendor = row['Selected Vendor'] || '';
             
             let vendorCells = activeVendors.map(v => {
@@ -159,7 +152,7 @@ function renderTable() {
                 return `<td class="vendor-cell">
                     <div class="d-flex align-items-center gap-1">
                         <input type="radio" name="vSelect_${i}" value="${v}" onchange="selectVendor(${i}, '${v}')" ${isChecked} ${isNA ? 'disabled' : ''}>
-                        <input type="number" step="0.01" class="form-control form-control-sm" style="width: 75px;" value="${valToDisplay}" onchange="updateVendorPrice(${i}, '${v}', this.value)" ${isNA ? 'disabled' : ''}>
+                        <input type="number" step="0.01" class="form-control form-control-sm" style="width: 75px;" placeholder="Price" value="${valToDisplay}" onchange="updateVendorPrice(${i}, '${v}', this.value)" ${isNA ? 'disabled' : ''}>
                         <button class="btn btn-sm btn-outline-danger py-0 px-1 fw-bold" onclick="toggleVendorNA(${i}, '${v}')" title="Mark NA">🚫</button>
                     </div>
                 </td>`;
@@ -171,22 +164,20 @@ function renderTable() {
                     <button class="btn btn-sm btn-outline-primary py-0 px-1" onclick="editRow(${i})" title="Edit"><i class="bi bi-pencil-square"></i></button>
                     <button class="btn btn-sm btn-outline-danger py-0 px-1 ms-1" onclick="deleteRow(${i})" title="Delete"><i class="bi bi-trash"></i></button>
                 </td>
-                <td class="sticky-col-2 fw-bold">${row['Product Code'] || ''}</td>
-                <td class="sticky-col-3 text-wrap name-col">${row['Product Name'] || ''}</td>
-                <td class="sticky-col-4">${row['Category'] || ''}</td>
-                <td>${row['Company'] || ''}</td>
-                <td class="specs-col text-wrap">${row['Company Specs'] || ''}</td>
-                <td class="text-center">${mQty}</td>
-                <td>${row['Qty'] || ''}</td>
+                <td class="sticky-col-2 fw-bold">${row['Item'] || ''}</td>
+                <td class="specs-col text-wrap">${row['Item Specs'] || ''}</td>
+                <td>${row['Preferred Company'] || ''}</td>
+                <td>${row['Product Code'] || ''}</td>
+                <td>${row['Required Quantity'] || ''}</td>
                 <td>${row['Unit'] || ''}</td>
-                <td>${row['Company Price'] || ''}</td>
+                <td>${row['Estimated Price'] || ''}</td>
                 <td class="fw-bold text-primary">${selVendor}</td>
-                <td class="fw-bold text-success">₹${price}</td>
+                <td class="fw-bold text-success">₹${totalEst.toFixed(2)}</td>
                 ${vendorCells}
             </tr>`;
         } else {
-            const actMin = row._minQty || mQty;
             let blankVendorCells = activeVendors.map(v => `<td class="text-muted small">Save row first</td>`).join('');
+            let isAny = (row['Preferred Company'] || 'Any').toLowerCase() === 'any';
             
             tbody.innerHTML += `<tr id="editRow_${i}" class="table-warning">
                 <td class="sticky-col-0">${i + 1}</td>
@@ -194,20 +185,18 @@ function renderTable() {
                     <button class="btn btn-sm btn-success py-0 px-1" onclick="saveRow(${i})" title="Save"><i class="bi bi-check-lg"></i></button>
                     <button class="btn btn-sm btn-danger py-0 px-1 ms-1" onclick="cancelRow(${i})" title="Cancel"><i class="bi bi-x-lg"></i></button>
                 </td>
-                <td class="sticky-col-2"><input type="text" class="form-control form-control-sm pCode fw-bold" value="${row['Product Code'] || ''}" list="codeList" onkeydown="handleEnter(event, this, ${i})" placeholder="Code"></td>
-                <td class="sticky-col-3 name-col"><textarea class="form-control form-control-sm pName" rows="2" list="nameList" onkeydown="handleEnter(event, this, ${i})" placeholder="Name (Enter)">${row['Product Name'] || ''}</textarea></td>
-                <td class="sticky-col-4"><input type="text" class="form-control form-control-sm pCategory" value="${row['Category'] || ''}" list="categoryList"></td>
-                <td><input type="text" class="form-control form-control-sm pCompany" value="${row['Company'] || ''}" list="companyList"></td>
-                <td class="specs-col"><textarea class="form-control form-control-sm pSpecs" rows="2">${row['Company Specs'] || ''}</textarea></td>
-                <td><input type="number" class="form-control form-control-sm pMinQty number-box" value="${actMin}" ${row._lockUnit ? 'disabled' : ''}></td>
-                <td><input type="number" class="form-control form-control-sm pQty number-box" value="${row['Qty'] || ''}" min="${actMin}"></td>
+                <td class="sticky-col-2"><input type="text" class="form-control form-control-sm pItem fw-bold" value="${row['Item'] || ''}" list="itemList" onkeydown="handleEnter(event, this, ${i})" placeholder="Item Name"></td>
+                <td class="specs-col"><textarea class="form-control form-control-sm pSpecs" rows="2" placeholder="Specs (Capacity, spout...)" onkeydown="handleEnter(event, this, ${i})">${row['Item Specs'] || ''}</textarea></td>
+                <td><input type="text" class="form-control form-control-sm pComp" value="${row['Preferred Company'] || 'Any'}" list="compList" onchange="toggleCode(this)"></td>
+                <td><input type="text" class="form-control form-control-sm pCode" value="${row['Product Code'] || ''}" ${isAny ? 'disabled' : ''}></td>
+                <td><input type="number" class="form-control form-control-sm pQty number-box" value="${row['Required Quantity'] || ''}" min="1"></td>
                 <td>
-                    <select class="form-select form-select-sm pUnit number-box" onchange="checkNewUnit(this)" ${row._lockUnit ? 'disabled' : ''}>
+                    <select class="form-select form-select-sm pUnit number-box" onchange="checkNewUnit(this)">
                         <option value="${row['Unit'] || 'Piece'}" selected>${row['Unit'] || 'Piece'}</option>
-                        <option value="Box">Box</option><option value="Packet">Packet</option><option value="_NEW_">+ Add</option>
+                        <option value="Box">Box</option><option value="Packet">Packet</option><option value="Roll">Roll</option><option value="_NEW_">+ Add</option>
                     </select>
                 </td>
-                <td><input type="number" step="0.01" class="form-control form-control-sm pCompPrice number-box" value="${row['Company Price'] || ''}"></td>
+                <td><input type="number" step="0.01" class="form-control form-control-sm pEstPrice number-box" value="${row['Estimated Price'] || ''}"></td>
                 <td colspan="2" class="text-muted small text-center">Save row first</td>
                 ${blankVendorCells}
             </tr>`;
@@ -218,45 +207,75 @@ function renderTable() {
     calcBalance();
 }
 
-function openAddVendorModal() {
-    document.getElementById('newVendorName').value = '';
-    new bootstrap.Modal(document.getElementById('addVendorModal')).show();
+function checkNewUnit(sel) {
+    if(sel.value === "_NEW_") {
+        const u = prompt("Enter new unit type:");
+        if(u) { sel.add(new Option(u, u), sel.options[0]); sel.value = u; }
+        else { sel.value = "Piece"; }
+    }
 }
+
+// Data autofill based on typing in Item or Specs
+function handleEnter(e, elem, index) {
+    if (e.key === 'Enter' && !e.shiftKey) { 
+        e.preventDefault();
+        const tr = elem.closest('tr');
+        const iVal = tr.querySelector('.pItem').value.trim().toLowerCase();
+        
+        let match = Object.values(productDB).find(p => p.item.toLowerCase() === iVal);
+        if (match) {
+            tr.querySelector('.pItem').value = match.item;
+            tr.querySelector('.pSpecs').value = match.specs || "";
+            tr.querySelector('.pComp').value = match.prefComp || "Any";
+            tr.querySelector('.pCode').value = match.code || "";
+            toggleCode(tr.querySelector('.pComp'));
+            tr.querySelector('.pEstPrice').value = match.estPrice || "";
+            
+            const uSel = tr.querySelector('.pUnit');
+            if(![...uSel.options].some(o => o.value === match.unit)) uSel.add(new Option(match.unit, match.unit));
+            uSel.value = match.unit;
+        }
+    }
+}
+
+function openAddVendorModal() { document.getElementById('newVendorName').value = ''; new bootstrap.Modal(document.getElementById('addVendorModal')).show(); }
 
 function confirmAddVendor() {
     const v = document.getElementById('newVendorName').value.trim();
     if(v && !activeVendors.includes(v)) {
-        activeVendors.push(v);
-        currentListData.forEach(r => r[v] = ""); 
-        renderTable();
+        activeVendors.push(v); currentListData.forEach(r => r[v] = ""); renderTable();
     }
     bootstrap.Modal.getInstance(document.getElementById('addVendorModal')).hide();
 }
 
 function toggleVendorNA(i, v) {
-    if(currentListData[i][v] === 'NA') {
-        currentListData[i][v] = ''; 
-    } else {
+    if(currentListData[i][v] === 'NA') currentListData[i][v] = ''; 
+    else {
         currentListData[i][v] = 'NA';
         if(currentListData[i]['Selected Vendor'] === v) {
-            currentListData[i]['Selected Vendor'] = '';
-            currentListData[i]['Final Price'] = '';
+            currentListData[i]['Selected Vendor'] = ''; currentListData[i]['Total Estimate'] = '';
         }
     }
     renderTable();
 }
 
+// Multiplying Quantity x Unit Price to get Total Estimate
 function updateVendorPrice(i, v, val) {
     currentListData[i][v] = val;
-    if(currentListData[i]['Selected Vendor'] === v) currentListData[i]['Final Price'] = val;
+    if(currentListData[i]['Selected Vendor'] === v) {
+        let price = parseFloat(val) || 0;
+        let qty = parseFloat(currentListData[i]['Required Quantity']) || 0;
+        currentListData[i]['Total Estimate'] = (price * qty).toFixed(2);
+    }
     calcTotal();
 }
 
 function selectVendor(i, v) {
     currentListData[i]['Selected Vendor'] = v;
-    currentListData[i]['Final Price'] = currentListData[i][v];
-    calcTotal();
-    renderTable(); 
+    let price = parseFloat(currentListData[i][v]) || 0;
+    let qty = parseFloat(currentListData[i]['Required Quantity']) || 0;
+    currentListData[i]['Total Estimate'] = (price * qty).toFixed(2);
+    calcTotal(); renderTable(); 
 }
 
 function optimizeVendors() {
@@ -265,13 +284,13 @@ function optimizeVendors() {
         let bestVendor = ''; let minPrice = Infinity;
         activeVendors.forEach(v => {
             let p = parseFloat(row[v]);
-            if(!isNaN(p) && p > 0 && p < minPrice) {
-                minPrice = p; bestVendor = v;
-            }
+            // Exclude NA vendors automatically
+            if(!isNaN(p) && p > 0 && p < minPrice && row[v] !== 'NA') { minPrice = p; bestVendor = v; }
         });
         if(bestVendor) {
             row['Selected Vendor'] = bestVendor;
-            row['Final Price'] = minPrice;
+            let qty = parseFloat(row['Required Quantity']) || 0;
+            row['Total Estimate'] = (minPrice * qty).toFixed(2);
         }
     });
     renderTable();
@@ -279,32 +298,22 @@ function optimizeVendors() {
 
 function calcTotal() {
     let total = 0;
-    currentListData.forEach(r => {
-        const qty = parseFloat(r['Qty']) || 0;
-        const price = parseFloat(r['Final Price']) || 0;
-        total += (qty * price);
-    });
+    currentListData.forEach(r => { total += parseFloat(r['Total Estimate']) || 0; });
     document.getElementById('totalBudget').innerText = '₹' + total.toFixed(2);
     calcBalance();
 }
 
 function addNewRow() {
-    let newRow = { _isEditing: true, _isNew: true, 'Qty': 1, '_minQty': 1 };
+    let newRow = { _isEditing: true, _isNew: true, 'Required Quantity': 1 };
     activeVendors.forEach(v => newRow[v] = "");
     currentListData.push(newRow);
     renderTable();
-    const tContainer = document.querySelector('.table-responsive');
-    tContainer.scrollTop = tContainer.scrollHeight;
+    const tContainer = document.querySelector('.table-responsive'); tContainer.scrollTop = tContainer.scrollHeight;
 }
 
 function editRow(i) {
     currentListData[i]._isEditing = true;
     currentListData[i]._origState = {...currentListData[i]}; 
-    const code = currentListData[i]['Product Code'];
-    if(productDB[code]) {
-        currentListData[i]._minQty = productDB[code].minQty;
-        currentListData[i]._lockUnit = !!productDB[code].unit;
-    }
     renderTable();
 }
 
@@ -315,93 +324,34 @@ function cancelRow(i) {
 }
 
 async function deleteRow(i) {
-    if(confirm("Delete this item from the list?")) {
-        currentListData.splice(i, 1);
-        await syncTableToBackend();
-    }
-}
-
-function checkNewUnit(sel) {
-    if(sel.value === "_NEW_") {
-        const u = prompt("Enter new unit type:");
-        if(u) { sel.add(new Option(u, u), sel.options[0]); sel.value = u; }
-        else { sel.value = "Piece"; }
-    }
-}
-
-function handleEnter(e, elem, index) {
-    if (e.key === 'Enter' && !e.shiftKey) { 
-        e.preventDefault();
-        fillRowByData(elem, index);
-    }
-}
-
-function fillRowByData(elem, index) {
-    const tr = elem.closest('tr');
-    const cVal = tr.querySelector('.pCode').value.trim();
-    const nVal = tr.querySelector('.pName').value.trim().toLowerCase();
-    
-    let match = null, codeKey = null;
-    if (productDB[cVal]) { match = productDB[cVal]; codeKey = cVal; }
-    else {
-        for (const [k, v] of Object.entries(productDB)) {
-            if (v.name.toLowerCase() === nVal) { match = v; codeKey = k; break; }
-        }
-    }
-
-    if (match) {
-        tr.querySelector('.pCode').value = codeKey;
-        tr.querySelector('.pCategory').value = match.category || "";
-        tr.querySelector('.pName').value = match.name || "";
-        tr.querySelector('.pCompany').value = match.company || "";
-        tr.querySelector('.pSpecs').value = match.specs || "";
-        tr.querySelector('.pCompPrice').value = match.compPrice || "";
-        
-        tr.querySelector('.pMinQty').value = match.minQty || 1;
-        tr.querySelector('.pMinQty').disabled = true; 
-        
-        const uSel = tr.querySelector('.pUnit');
-        if(![...uSel.options].some(o => o.value === match.unit)) uSel.add(new Option(match.unit, match.unit));
-        uSel.value = match.unit;
-        uSel.disabled = true; 
-        
-        tr.querySelector('.pQty').min = match.minQty || 1;
-        if(parseFloat(tr.querySelector('.pQty').value) < match.minQty) {
-            tr.querySelector('.pQty').value = match.minQty;
-        }
-    } else {
-        tr.querySelector('.pUnit').disabled = false;
-        tr.querySelector('.pMinQty').disabled = false;
-        tr.querySelector('.pQty').min = 1;
-    }
+    if(confirm("Delete this item from the list?")) { currentListData.splice(i, 1); await syncTableToBackend(); }
 }
 
 async function saveRow(i) {
     const tr = document.getElementById(`editRow_${i}`);
-    const code = tr.querySelector('.pCode').value.trim();
-    const name = tr.querySelector('.pName').value.trim();
-    const comp = tr.querySelector('.pCompany').value.trim();
+    const item = tr.querySelector('.pItem').value.trim();
+    const specs = tr.querySelector('.pSpecs').value.trim();
     const qty = parseFloat(tr.querySelector('.pQty').value) || 0;
-    const minQty = parseFloat(tr.querySelector('.pMinQty').value) || 1;
 
-    if (!code || !name) return alert("Code and Name are required.");
-    if (qty < minQty) return alert(`Quantity cannot be less than Minimum Qty (${minQty})`);
-    
-    const dup = currentListData.findIndex((r, idx) => idx !== i && r['Product Code'] === code && r['Company'] === comp && !r._isEditing);
-    if (dup > -1) return alert("This product already exists in this list!");
+    if (!item) return alert("Item Name is required.");
+    if (qty < 1) return alert("Quantity must be at least 1.");
 
     let sv = currentListData[i]._origState ? currentListData[i]._origState['Selected Vendor'] : '';
-    let fp = currentListData[i]._origState ? currentListData[i]._origState['Final Price'] : '';
-
+    
+    // Update basic logic
     currentListData[i] = {
-        'Product Code': code, 'Product Name': name, 'Category': tr.querySelector('.pCategory').value,
-        'Company': comp, 'Company Specs': tr.querySelector('.pSpecs').value, 'Min Qty': minQty, 'Qty': qty,
-        'Unit': tr.querySelector('.pUnit').value, 'Company Price': tr.querySelector('.pCompPrice').value,
-        'Selected Vendor': sv, 'Final Price': fp,
-        _isEditing: false
+        'Item': item, 'Item Specs': specs, 'Preferred Company': tr.querySelector('.pComp').value || 'Any',
+        'Product Code': tr.querySelector('.pCode').value, 'Required Quantity': qty,
+        'Unit': tr.querySelector('.pUnit').value, 'Estimated Price': tr.querySelector('.pEstPrice').value,
+        'Selected Vendor': sv, _isEditing: false
     };
 
     activeVendors.forEach(v => { currentListData[i][v] = currentListData[i]._origState ? currentListData[i]._origState[v] : ''; });
+    
+    // Recalculate if vendor already selected
+    if(sv && currentListData[i][sv] && currentListData[i][sv] !== 'NA') {
+        currentListData[i]['Total Estimate'] = (parseFloat(currentListData[i][sv]) * qty).toFixed(2);
+    } else currentListData[i]['Total Estimate'] = '';
 
     const btns = tr.querySelectorAll('button');
     btns[0].innerHTML = '<i class="bi bi-hourglass-split"></i>'; btns[0].disabled = true; btns[1].disabled = true;
@@ -410,8 +360,7 @@ async function saveRow(i) {
 }
 
 async function saveTableEdits() {
-    const btn = document.getElementById('btnSaveEdits');
-    btn.innerHTML = `<i class="bi bi-hourglass-split"></i> Saving...`; btn.disabled = true;
+    const btn = document.getElementById('btnSaveEdits'); btn.innerHTML = `<i class="bi bi-hourglass-split"></i> Saving...`; btn.disabled = true;
     await syncTableToBackend();
     btn.innerHTML = `<i class="bi bi-floppy"></i> Save Table Edits`; btn.disabled = false;
 }
@@ -421,15 +370,10 @@ async function syncTableToBackend() {
         const cleanData = currentListData.filter(r => !r._isEditing);
         const allHeaders = BASE_HEADERS.concat(activeVendors);
         await apiPost({ action: "saveTableEdits", listName: document.getElementById('listSelector').value, headers: allHeaders, tableData: cleanData });
-        
         const initRes = await apiPost({action: "getInit", username: USER.username, role: USER.role});
         productDB = initRes.products; vendorDB = initRes.vendors;
-        document.getElementById('vendorList').innerHTML = vendorDB.map(v => `<option value="${v}">`).join('');
         renderTable();
-    } catch(e) {
-        alert("Failed to sync list to server.");
-        renderTable(); 
-    }
+    } catch(e) { alert("Failed to sync list."); renderTable(); }
 }
 
 function calcBalance() {
@@ -441,57 +385,38 @@ function calcBalance() {
 document.getElementById('budgetInHand').addEventListener('input', calcBalance);
 
 async function updateBudget() {
-    const lName = document.getElementById('listSelector').value;
     const b = document.getElementById('budgetInHand').value;
-    await apiPost({action: "manageList", subAction: "updateMeta", listName: lName, budget: b});
-    latestInheritedBudget = b;
-    alert("Budget saved for this list.");
+    await apiPost({action: "manageList", subAction: "updateMeta", listName: document.getElementById('listSelector').value, budget: b});
+    latestInheritedBudget = b; alert("Budget saved.");
 }
 
 function manageList() {
-    const lName = document.getElementById('listSelector').value;
-    if(!lName) return;
+    const lName = document.getElementById('listSelector').value; if(!lName) return;
     const meta = activeLists.find(l => l.name === lName);
-    
     document.getElementById('listRename').value = lName;
     document.getElementById('listCollabs').value = meta.collabs.join(',');
-    
     if (USER.role === "Admin" || USER.role === "Lab Supervisor" || meta.owner === USER.username) document.getElementById('listRename').disabled = false;
     else document.getElementById('listRename').disabled = true;
-    
     new bootstrap.Modal(document.getElementById('listModal')).show();
 }
 
 async function renameList() {
-    const oldName = document.getElementById('listSelector').value;
-    const newName = document.getElementById('listRename').value.trim();
+    const oldName = document.getElementById('listSelector').value; const newName = document.getElementById('listRename').value.trim();
     if (!newName || oldName === newName) return;
-    if (activeLists.some(l => l.name === newName)) return alert("List name already exists!");
     await apiPost({action: "manageList", subAction: "rename", oldName: oldName, newName: newName});
-    document.getElementById('listSelector').setAttribute('data-curr', newName);
-    bootstrap.Modal.getInstance(document.getElementById('listModal')).hide();
-    fetchInitData();
+    document.getElementById('listSelector').setAttribute('data-curr', newName); bootstrap.Modal.getInstance(document.getElementById('listModal')).hide(); fetchInitData();
 }
 
 async function deleteList() {
     const lName = document.getElementById('listSelector').value;
-    const meta = activeLists.find(l => l.name === lName);
-    if (USER.role !== "Admin" && USER.role !== "Lab Supervisor" && meta.owner !== USER.username) return alert("You do not have permission to delete this list.");
-    
-    if(confirm(`Are you absolutely sure you want to delete the list '${lName}'? This cannot be undone.`)) {
+    if(confirm(`Are you absolutely sure you want to delete the list '${lName}'?`)) {
         await apiPost({action: "manageList", subAction: "delete", listName: lName});
-        document.getElementById('listSelector').setAttribute('data-curr', "");
-        bootstrap.Modal.getInstance(document.getElementById('listModal')).hide();
-        fetchInitData();
+        document.getElementById('listSelector').setAttribute('data-curr', ""); bootstrap.Modal.getInstance(document.getElementById('listModal')).hide(); fetchInitData();
     }
 }
-
 async function saveListSettings() {
-    const lName = document.getElementById('listSelector').value;
-    const cols = document.getElementById('listCollabs').value;
-    await apiPost({action: "manageList", subAction: "updateMeta", listName: lName, collabs: cols});
-    bootstrap.Modal.getInstance(document.getElementById('listModal')).hide();
-    fetchInitData();
+    await apiPost({action: "manageList", subAction: "updateMeta", listName: document.getElementById('listSelector').value, collabs: document.getElementById('listCollabs').value});
+    bootstrap.Modal.getInstance(document.getElementById('listModal')).hide(); fetchInitData();
 }
 
 // -------------------------------------------------------------
@@ -500,149 +425,108 @@ async function saveListSettings() {
 let inventorySearchTerm = "";
 
 function openInventoryModal() {
-    inventorySearchTerm = "";
-    document.getElementById('invSearch').value = "";
-    renderInventoryTable();
-    const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('inventoryModal'));
-    modal.show();
+    inventorySearchTerm = ""; document.getElementById('invSearch').value = "";
+    renderInventoryTable(); const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('inventoryModal')); modal.show();
 }
 
 function renderInventoryTable() {
     const tbody = document.getElementById('invBody');
     const rawTerm = inventorySearchTerm.toLowerCase().trim();
     
-    // Lazy Load: Ask user to search if empty
     if (rawTerm.length === 0) {
-        tbody.innerHTML = `<tr>
-            <td colspan="9" class="text-center text-muted p-4">
-                <i class="bi bi-search fs-4 d-block mb-2 text-secondary"></i>
-                Start typing in the search box above to find products...
-            </td>
-        </tr>`;
+        tbody.innerHTML = `<tr><td colspan="7" class="text-center text-muted p-4"><i class="bi bi-search fs-4 d-block mb-2"></i> Start typing to search DB...</td></tr>`;
         return;
     }
 
-    // Smart Keyword logic
     const keywords = rawTerm.split(/[\s;,]+/).filter(kw => kw.length > 0);
+    let count = 0; const MAX_RESULTS = 50; let htmlBuffer = ""; 
     
-    let count = 0;
-    const MAX_RESULTS = 50; 
-    let htmlBuffer = ""; 
-    
-    for(const [code, p] of Object.entries(productDB)) {
+    for(const [dbId, p] of Object.entries(productDB)) {
         if (count >= MAX_RESULTS) break;
+        const searchableText = `${p.item || ''} ${p.specs || ''} ${p.prefComp || ''} ${p.code || ''}`.toLowerCase();
         
-        // Massive hidden string combining all relevant data
-        const searchableText = `${code} ${p.name || ''} ${p.category || ''} ${p.company || ''} ${p.specs || ''}`.toLowerCase();
+        if (!keywords.every(kw => searchableText.includes(kw))) continue;
         
-        // Ensure EVERY keyword exists
-        const isMatch = keywords.every(kw => searchableText.includes(kw));
-        
-        if (!isMatch) continue;
-        
-        let actionBtns = `<button class="btn btn-sm btn-outline-success py-0 px-1 me-1 text-nowrap" onclick="addFromInventory('${code}')" title="Add to List"><i class="bi bi-plus-circle"></i> Add</button>`;
-        
+        let actionBtns = `<button class="btn btn-sm btn-outline-success py-0 px-1 me-1 text-nowrap" onclick="addFromInventory('${dbId}')"><i class="bi bi-plus-circle"></i> Add</button>`;
         if (USER.role === "Admin" || USER.role === "Lab Supervisor") {
-            actionBtns += `<button class="btn btn-sm btn-outline-warning py-0 px-1" onclick="openEditProduct('${code}')" title="Edit"><i class="bi bi-pencil-square"></i></button>
-                   <button class="btn btn-sm btn-outline-danger py-0 px-1 ms-1" onclick="deleteProduct('${code}')" title="Delete"><i class="bi bi-trash"></i></button>`;
-        } else {
-            actionBtns += `<span class="text-muted small ms-1">View Only</span>`;
+            actionBtns += `<button class="btn btn-sm btn-outline-warning py-0 px-1" onclick="openEditProduct('${dbId}')"><i class="bi bi-pencil-square"></i></button>
+                   <button class="btn btn-sm btn-outline-danger py-0 px-1 ms-1" onclick="deleteProduct('${dbId}')"><i class="bi bi-trash"></i></button>`;
         }
         
         htmlBuffer += `<tr>
-            <td>${code}</td>
-            <td class="text-wrap" style="min-width:150px;">${p.name || ''}</td>
-            <td>${p.category || ''}</td>
-            <td>${p.company || ''}</td>
-            <td class="text-wrap" style="min-width:200px;">${p.specs || ''}</td>
-            <td>${p.minQty || 1}</td>
+            <td class="fw-bold">${p.item || ''}</td>
+            <td class="text-wrap">${p.specs || ''}</td>
+            <td>${p.prefComp || ''}</td>
+            <td>${p.code || ''}</td>
             <td>${p.unit || ''}</td>
-            <td>${p.compPrice || ''}</td>
+            <td>${p.estPrice || ''}</td>
             <td class="text-center text-nowrap">${actionBtns}</td>
         </tr>`;
-        
         count++;
     }
     
-    if (count === 0) {
-        htmlBuffer = `<tr><td colspan="9" class="text-center text-danger p-3 fw-bold">No products matched "${rawTerm}"</td></tr>`;
-    } else if (count === MAX_RESULTS) {
-        htmlBuffer += `<tr><td colspan="9" class="text-center text-muted fst-italic bg-light">Showing top ${MAX_RESULTS} results. Keep typing to narrow down...</td></tr>`;
-    }
-    
+    if (count === 0) htmlBuffer = `<tr><td colspan="7" class="text-center text-danger p-3 fw-bold">No products matched all keywords</td></tr>`;
+    else if (count === MAX_RESULTS) htmlBuffer += `<tr><td colspan="7" class="text-center text-muted bg-light">Showing top ${MAX_RESULTS} results...</td></tr>`;
     tbody.innerHTML = htmlBuffer; 
 }
 
-function addFromInventory(code) {
-    if (!document.getElementById('listSelector').value) return alert("Please select or create a list first.");
-    const p = productDB[code]; if (!p) return;
-    if (currentListData.findIndex((r) => r['Product Code'] === code && r['Company'] === p.company && !r._isEditing) > -1) {
-        alert("This product is already in the current list! You can edit its quantity in the table."); 
-        bootstrap.Modal.getInstance(document.getElementById('inventoryModal')).hide(); 
-        return;
-    }
-
+function addFromInventory(dbId) {
+    const p = productDB[dbId]; if (!p) return;
     let newRow = {
-        'Product Code': code, 'Product Name': p.name, 'Category': p.category || '', 'Company': p.company || '',
-        'Company Specs': p.specs || '', 'Min Qty': p.minQty || 1, 'Qty': p.minQty || 1, 'Unit': p.unit || 'Piece',
-        'Company Price': p.compPrice || '', 'Selected Vendor': '', 'Final Price': '',
-        _isEditing: true, _isNew: true, _minQty: p.minQty || 1, _lockUnit: !!p.unit
+        'Item': p.item, 'Item Specs': p.specs || '', 'Preferred Company': p.prefComp || 'Any',
+        'Product Code': p.code || '', 'Required Quantity': 1, 'Unit': p.unit || 'Piece',
+        'Estimated Price': p.estPrice || '', 'Selected Vendor': '', 'Total Estimate': '',
+        _isEditing: true, _isNew: true
     };
-    activeVendors.forEach(v => newRow[v] = "");
-    currentListData.push(newRow);
-
+    activeVendors.forEach(v => newRow[v] = ""); currentListData.push(newRow);
     bootstrap.Modal.getInstance(document.getElementById('inventoryModal')).hide();
-    renderTable();
-    const tContainer = document.querySelector('.table-responsive'); tContainer.scrollTop = tContainer.scrollHeight;
+    renderTable(); const tContainer = document.querySelector('.table-responsive'); tContainer.scrollTop = tContainer.scrollHeight;
 }
 
-function openEditProduct(code) {
-    const p = productDB[code];
-    document.getElementById('editOrigCode').value = code;
-    document.getElementById('editCode').value = code;
-    document.getElementById('editName').value = p.name;
-    document.getElementById('editCat').value = p.category || '';
-    document.getElementById('editComp').value = p.company || '';
+function openEditProduct(dbId) {
+    const p = productDB[dbId];
+    document.getElementById('editDbId').value = dbId;
+    document.getElementById('editItem').value = p.item;
     document.getElementById('editSpecs').value = p.specs || '';
-    document.getElementById('editMin').value = p.minQty || 1;
+    document.getElementById('editComp').value = p.prefComp || 'Any';
+    document.getElementById('editCode').value = p.code || '';
     document.getElementById('editUnit').value = p.unit || '';
-    document.getElementById('editPrice').value = p.compPrice || '';
+    document.getElementById('editPrice').value = p.estPrice || '';
+    toggleModalCode();
     
     bootstrap.Modal.getInstance(document.getElementById('inventoryModal')).hide();
     new bootstrap.Modal(document.getElementById('fullEditModal')).show();
 }
 
-async function submitProductEdit() {
-    const btn = document.querySelector('#fullEditModal .btn-success');
-    const originalText = btn.innerHTML;
-    btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Saving...'; 
-    btn.disabled = true;
-
-    const code = document.getElementById('editOrigCode').value;
-    const payload = {
-        action: "updateProduct", role: USER.role, 
-        product: { code: code, name: document.getElementById('editName').value, category: document.getElementById('editCat').value, company: document.getElementById('editComp').value, specs: document.getElementById('editSpecs').value, compPrice: document.getElementById('editPrice').value, minQty: document.getElementById('editMin').value, unit: document.getElementById('editUnit').value }
-    };
-    
-    await apiPost(payload);
-    await fetchInitData(); // Pull fresh data from server
-    
-    bootstrap.Modal.getInstance(document.getElementById('fullEditModal')).hide();
-    renderInventoryTable(); // Refresh table silently while modal stays open in background
-    
-    btn.innerHTML = originalText; 
-    btn.disabled = false;
+function toggleModalCode() {
+    const comp = document.getElementById('editComp').value.trim().toLowerCase();
+    const cBox = document.getElementById('editCode');
+    if(comp === 'any' || comp === '') { cBox.value = ''; cBox.disabled = true; } else cBox.disabled = false;
 }
 
-async function deleteProduct(code) {
-    if(confirm(`Are you sure you want to delete Product Code: ${code} from the inventory?`)) {
-        await apiPost({action: "deleteProduct", role: USER.role, code: code});
-        await fetchInitData(); 
-        renderInventoryTable(); 
+async function submitProductEdit() {
+    const btn = document.querySelector('#fullEditModal .btn-success'); btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Saving...'; btn.disabled = true;
+    const payload = {
+        action: "updateProduct", role: USER.role, 
+        product: { 
+            dbId: document.getElementById('editDbId').value, item: document.getElementById('editItem').value, 
+            specs: document.getElementById('editSpecs').value, prefComp: document.getElementById('editComp').value || 'Any', 
+            code: document.getElementById('editCode').value, unit: document.getElementById('editUnit').value, estPrice: document.getElementById('editPrice').value 
+        }
+    };
+    await apiPost(payload); await fetchInitData(); 
+    bootstrap.Modal.getInstance(document.getElementById('fullEditModal')).hide();
+    renderInventoryTable(); btn.innerHTML = '<i class="bi bi-floppy"></i> Save to DB'; btn.disabled = false;
+}
+
+async function deleteProduct(dbId) {
+    if(confirm(`Are you sure you want to delete this product from the master DB?`)) {
+        await apiPost({action: "deleteProduct", role: USER.role, dbId: dbId});
+        await fetchInitData(); renderInventoryTable(); 
     }
 }
 
-// -- User Management --
+// User & Export logic remains mostly identical, just updated export headers.
 async function openUsersModal() {
     const res = await apiPost({action: "manageUsers", subAction: "get", role: USER.role});
     if(res.status === "success") {
@@ -654,36 +538,26 @@ async function openUsersModal() {
         new bootstrap.Modal(document.getElementById('usersModal')).show();
     }
 }
-
 document.getElementById('addUserForm').addEventListener('submit', async function(e) {
     e.preventDefault();
     const res = await apiPost({action: "manageUsers", subAction: "add", role: USER.role, newUser: document.getElementById('newUName').value.trim(), newPass: document.getElementById('newUPass').value.trim(), newRole: document.getElementById('newURole').value});
     if(res.status === "success") { e.target.reset(); openUsersModal(); } else alert(res.message);
 });
-
 async function deleteUser(username) {
-    if(confirm(`Delete user ${username}?`)) {
-        await apiPost({action: "manageUsers", subAction: "delete", role: USER.role, targetUser: username});
-        openUsersModal();
-    }
+    if(confirm(`Delete user ${username}?`)) { await apiPost({action: "manageUsers", subAction: "delete", role: USER.role, targetUser: username}); openUsersModal(); }
 }
 
-// -- Export Module --
 function openExportModal(type) {
     currentExportType = type;
     let vendorOptions = `<option value="ALL">Master List (All Active)</option>`;
     activeVendors.forEach(v => vendorOptions += `<option value="${v}">${v} List</option>`);
-    
-    const sel = document.getElementById('exportVendorSelect');
-    if(sel) sel.innerHTML = vendorOptions;
-    
-    renderExportCheckboxes();
-    new bootstrap.Modal(document.getElementById('exportModal')).show();
+    const sel = document.getElementById('exportVendorSelect'); if(sel) sel.innerHTML = vendorOptions;
+    renderExportCheckboxes(); new bootstrap.Modal(document.getElementById('exportModal')).show();
 }
 
 function renderExportCheckboxes() {
     let mode = document.getElementById('exportVendorSelect') ? document.getElementById('exportVendorSelect').value : "ALL";
-    let colsToOffer = (mode === "ALL") ? BASE_HEADERS.concat(activeVendors) : ["SL No", "Product Code", "Product Name", "Qty", "Unit", "Final Price"];
+    let colsToOffer = (mode === "ALL") ? BASE_HEADERS.concat(activeVendors) : ["SL No", "Item", "Item Specs", "Preferred Company", "Product Code", "Required Quantity", "Unit", "Total Estimate"];
     document.getElementById('exportColCheckboxes').innerHTML = colsToOffer.map((c, i) => `<div class="form-check"><input class="form-check-input exp-chk" type="checkbox" value="${c}" id="chk${i}" checked><label class="form-check-label" for="chk${i}">${c}</label></div>`).join('');
 }
 
@@ -691,107 +565,48 @@ function executeExport() {
     bootstrap.Modal.getInstance(document.getElementById('exportModal')).hide();
     const selectedCols = Array.from(document.querySelectorAll('.exp-chk:checked')).map(cb => cb.value);
     if(selectedCols.length === 0) return alert("Select at least one column.");
-
-    const mode = document.getElementById('exportVendorSelect').value;
-    const baseListName = document.getElementById('listSelector').value;
+    const mode = document.getElementById('exportVendorSelect').value; const baseListName = document.getElementById('listSelector').value;
     const fileName = mode === "ALL" ? baseListName : `${baseListName}_${mode}`;
 
     let sourceData = currentListData.filter(r => !r._isEditing);
     if(mode !== "ALL") sourceData = sourceData.filter(r => r['Selected Vendor'] === mode);
+    const exportData = sourceData.map((row, index) => { let obj = {}; selectedCols.forEach(col => { obj[col] = (col === "SL No") ? (index + 1) : row[col]; }); return obj; });
 
-    const exportData = sourceData.map((row, index) => {
-        let obj = {}; selectedCols.forEach(col => { obj[col] = (col === "SL No") ? (index + 1) : row[col]; }); return obj;
-    });
-
-    if (currentExportType === 'excel') {
-        const ws = XLSX.utils.json_to_sheet(exportData);
-        const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Export"); XLSX.writeFile(wb, `${fileName}.xlsx`);
-    } else if (currentExportType === 'csv') {
-        const ws = XLSX.utils.json_to_sheet(exportData);
-        const blob = new Blob([XLSX.utils.sheet_to_csv(ws)], { type: 'text/csv;charset=utf-8;' });
-        const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = `${fileName}.csv`; link.click();
-    } else if (currentExportType === 'pdf') {
-        const doc = new jspdf.jsPDF('landscape'); doc.text(`Dr. Nimmi Das Lab - ${fileName}`, 14, 15);
-        doc.autoTable({ head: [selectedCols], body: exportData.map(obj => selectedCols.map(col => obj[col])), startY: 20, styles: { fontSize: 8 } });
-        doc.save(`${fileName}.pdf`);
-    } else if (currentExportType === 'print') {
-        let win = window.open('', '', 'width=900,height=600');
-        let html = `<html><head><title>${fileName}</title><style>table{width:100%; border-collapse:collapse;} th,td{border:1px solid #000; padding:5px;}</style></head><body>`;
-        html += `<h2>Dr. Nimmi Das Lab - ${fileName}</h2><table><thead><tr>`; selectedCols.forEach(c => html += `<th>${c}</th>`); html += `</tr></thead><tbody>`;
-        exportData.forEach(row => { html += `<tr>`; selectedCols.forEach(c => html += `<td>${row[c] || ''}</td>`); html += `</tr>`; });
-        html += `</tbody></table></body></html>`; win.document.write(html); win.document.close(); win.print();
-    }
+    if (currentExportType === 'excel') { const ws = XLSX.utils.json_to_sheet(exportData); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Export"); XLSX.writeFile(wb, `${fileName}.xlsx`); } 
+    else if (currentExportType === 'csv') { const blob = new Blob([XLSX.utils.sheet_to_csv(XLSX.utils.json_to_sheet(exportData))], { type: 'text/csv;charset=utf-8;' }); const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = `${fileName}.csv`; link.click(); } 
+    else if (currentExportType === 'pdf') { const doc = new jspdf.jsPDF('landscape'); doc.text(`Dr. Nimmi Das Lab - ${fileName}`, 14, 15); doc.autoTable({ head: [selectedCols], body: exportData.map(obj => selectedCols.map(col => obj[col])), startY: 20, styles: { fontSize: 8 } }); doc.save(`${fileName}.pdf`); } 
+    else if (currentExportType === 'print') { let win = window.open('', '', 'width=900,height=600'); let html = `<html><head><title>${fileName}</title><style>table{width:100%; border-collapse:collapse;} th,td{border:1px solid #000; padding:5px;}</style></head><body><h2>Dr. Nimmi Das Lab - ${fileName}</h2><table><thead><tr>`; selectedCols.forEach(c => html += `<th>${c}</th>`); html += `</tr></thead><tbody>`; exportData.forEach(row => { html += `<tr>`; selectedCols.forEach(c => html += `<td>${row[c] || ''}</td>`); html += `</tr>`; }); html += `</tbody></table></body></html>`; win.document.write(html); win.document.close(); win.print(); }
 }
 
-// -------------------------------------------------------------
-// GLOBAL EVENT LISTENERS (Virtualization & Smart Searches)
-// -------------------------------------------------------------
 document.addEventListener('DOMContentLoaded', () => {
-    
-    // 1. DYNAMIC DATALISTS (Only populates top 25 matches exactly when you type)
     document.getElementById('tableBody').addEventListener('input', function(e) {
         if (!e.target.matches('input[list], textarea[list]')) return;
-        
         const term = e.target.value.toLowerCase().trim();
-        const listId = e.target.getAttribute('list');
-        const dataList = document.getElementById(listId);
+        const listId = e.target.getAttribute('list'); const dataList = document.getElementById(listId);
+        if (!dataList) return; if (term.length === 0) { dataList.innerHTML = ''; return; }
         
-        if (!dataList) return;
+        let count = 0; let optionsHTML = ''; const added = new Set();
         
-        if (term.length === 0) {
-            dataList.innerHTML = ''; return;
-        }
-        
-        let count = 0;
-        const MAX_OPTIONS = 25; 
-        let optionsHTML = '';
-        const added = new Set();
-        
-        for (const [code, p] of Object.entries(productDB)) {
-            if (count >= MAX_OPTIONS) break;
+        for (const [dbId, p] of Object.entries(productDB)) {
+            if (count >= 25) break;
+            let val = null;
+            if (listId === 'itemList' && p.item && p.item.toLowerCase().includes(term)) val = p.item;
+            else if (listId === 'compList' && p.prefComp && p.prefComp.toLowerCase().includes(term)) val = p.prefComp;
             
-            let valToAdd = null;
-            if (listId === 'codeList' && code.toLowerCase().includes(term)) valToAdd = code;
-            else if (listId === 'nameList' && p.name && p.name.toLowerCase().includes(term)) valToAdd = p.name;
-            else if (listId === 'categoryList' && p.category && p.category.toLowerCase().includes(term)) valToAdd = p.category;
-            else if (listId === 'companyList' && p.company && p.company.toLowerCase().includes(term)) valToAdd = p.company;
-            
-            if (valToAdd && !added.has(valToAdd)) {
-                added.add(valToAdd);
-                optionsHTML += `<option value="${valToAdd}">`;
-                count++;
-            }
+            if (val && !added.has(val)) { added.add(val); optionsHTML += `<option value="${val}">`; count++; }
         }
         dataList.innerHTML = optionsHTML;
     });
 
-    // 2. INVENTORY MODAL SMART SEARCH LISTENER
-    document.getElementById('invSearch').addEventListener('input', function() {
-        inventorySearchTerm = this.value;
-        renderInventoryTable();
-    });
+    document.getElementById('invSearch').addEventListener('input', function() { inventorySearchTerm = this.value; renderInventoryTable(); });
     
-    // 3. MAIN TABLE SMART SEARCH FILTER
     document.getElementById('searchInput').addEventListener('input', function() {
-        const rawTerm = this.value.toLowerCase().trim();
-        const keywords = rawTerm.split(/[\s;,]+/).filter(kw => kw.length > 0);
-        
+        const keywords = this.value.toLowerCase().trim().split(/[\s;,]+/).filter(kw => kw.length > 0);
         const rows = document.getElementById('tableBody').getElementsByTagName('tr');
-        
         for (let i = 0; i < rows.length; i++) {
-            // Ignore rows that are in edit mode
             if (rows[i].classList.contains('table-warning')) continue; 
-            
-            // If search is blank, show everything
-            if (keywords.length === 0) {
-                rows[i].style.display = "";
-                continue;
-            }
-
-            const rowText = rows[i].innerText.toLowerCase();
-            
-            // Smart Keyword match: ensures every keyword is present anywhere in the row
-            const isMatch = keywords.every(kw => rowText.includes(kw));
+            if (keywords.length === 0) { rows[i].style.display = ""; continue; }
+            const isMatch = keywords.every(kw => rows[i].innerText.toLowerCase().includes(kw));
             rows[i].style.display = isMatch ? "" : "none";
         }
     });
