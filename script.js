@@ -1,4 +1,4 @@
-const API_URL = "https://script.google.com/macros/s/AKfycbxkDBmVRgyuB8yKgLxx_-qAuQNI9z2xOEd-pzGt4QzNhXJ1aOc0WfDtENvxkYguRK9l/exec"; // Do not forget to paste your new Apps Script URL here!
+const API_URL = "https://script.google.com/macros/s/AKfycbxkDBmVRgyuB8yKgLxx_-qAuQNI9z2xOEd-pzGt4QzNhXJ1aOc0WfDtENvxkYguRK9l/exec"; 
     
 let USER = null;
 let productDB = {};
@@ -105,7 +105,6 @@ async function handleListChange() {
     } catch (e) { document.getElementById('tableBody').innerHTML = '<tr><td colspan="20" class="text-danger text-center">Load failed.</td></tr>'; }
 }
 
-// Logic to disable code if Any
 function toggleCode(elem) {
     const tr = elem.closest('tr');
     const codeInput = tr.querySelector('.pCode');
@@ -186,7 +185,7 @@ function renderTable() {
                     <button class="btn btn-sm btn-danger py-0 px-1 ms-1" onclick="cancelRow(${i})" title="Cancel"><i class="bi bi-x-lg"></i></button>
                 </td>
                 <td class="sticky-col-2"><input type="text" class="form-control form-control-sm pItem fw-bold" value="${row['Item'] || ''}" list="itemList" onkeydown="handleEnter(event, this, ${i})" placeholder="Item Name"></td>
-                <td class="specs-col"><textarea class="form-control form-control-sm pSpecs" rows="2" placeholder="Specs (Capacity, spout...)" onkeydown="handleEnter(event, this, ${i})">${row['Item Specs'] || ''}</textarea></td>
+                <td class="specs-col"><input type="text" class="form-control form-control-sm pSpecs" value="${row['Item Specs'] || ''}" list="specsList" placeholder="Specs (Capacity...)" onkeydown="handleEnter(event, this, ${i})"></td>
                 <td><input type="text" class="form-control form-control-sm pComp" value="${row['Preferred Company'] || 'Any'}" list="compList" onchange="toggleCode(this)"></td>
                 <td><input type="text" class="form-control form-control-sm pCode" value="${row['Product Code'] || ''}" ${isAny ? 'disabled' : ''}></td>
                 <td><input type="number" class="form-control form-control-sm pQty number-box" value="${row['Required Quantity'] || ''}" min="1"></td>
@@ -215,7 +214,6 @@ function checkNewUnit(sel) {
     }
 }
 
-// Data autofill based on typing in Item or Specs
 function handleEnter(e, elem, index) {
     if (e.key === 'Enter' && !e.shiftKey) { 
         e.preventDefault();
@@ -259,7 +257,6 @@ function toggleVendorNA(i, v) {
     renderTable();
 }
 
-// Multiplying Quantity x Unit Price to get Total Estimate
 function updateVendorPrice(i, v, val) {
     currentListData[i][v] = val;
     if(currentListData[i]['Selected Vendor'] === v) {
@@ -284,7 +281,6 @@ function optimizeVendors() {
         let bestVendor = ''; let minPrice = Infinity;
         activeVendors.forEach(v => {
             let p = parseFloat(row[v]);
-            // Exclude NA vendors automatically
             if(!isNaN(p) && p > 0 && p < minPrice && row[v] !== 'NA') { minPrice = p; bestVendor = v; }
         });
         if(bestVendor) {
@@ -338,7 +334,6 @@ async function saveRow(i) {
 
     let sv = currentListData[i]._origState ? currentListData[i]._origState['Selected Vendor'] : '';
     
-    // Update basic logic
     currentListData[i] = {
         'Item': item, 'Item Specs': specs, 'Preferred Company': tr.querySelector('.pComp').value || 'Any',
         'Product Code': tr.querySelector('.pCode').value, 'Required Quantity': qty,
@@ -348,7 +343,6 @@ async function saveRow(i) {
 
     activeVendors.forEach(v => { currentListData[i][v] = currentListData[i]._origState ? currentListData[i]._origState[v] : ''; });
     
-    // Recalculate if vendor already selected
     if(sv && currentListData[i][sv] && currentListData[i][sv] !== 'NA') {
         currentListData[i]['Total Estimate'] = (parseFloat(currentListData[i][sv]) * qty).toFixed(2);
     } else currentListData[i]['Total Estimate'] = '';
@@ -465,8 +459,12 @@ function renderInventoryTable() {
         count++;
     }
     
-    if (count === 0) htmlBuffer = `<tr><td colspan="7" class="text-center text-danger p-3 fw-bold">No products matched all keywords</td></tr>`;
-    else if (count === MAX_RESULTS) htmlBuffer += `<tr><td colspan="7" class="text-center text-muted bg-light">Showing top ${MAX_RESULTS} results...</td></tr>`;
+    if (count === 0) {
+        const kwString = keywords.map(k => `"${k}"`).join(", ");
+        htmlBuffer = `<tr><td colspan="7" class="text-center text-danger p-3 fw-bold"><i class="bi bi-exclamation-triangle"></i> No products matched all keywords: ${kwString}</td></tr>`;
+    } else if (count === MAX_RESULTS) {
+        htmlBuffer += `<tr><td colspan="7" class="text-center text-muted bg-light">Showing top ${MAX_RESULTS} results...</td></tr>`;
+    }
     tbody.innerHTML = htmlBuffer; 
 }
 
@@ -526,7 +524,6 @@ async function deleteProduct(dbId) {
     }
 }
 
-// User & Export logic remains mostly identical, just updated export headers.
 async function openUsersModal() {
     const res = await apiPost({action: "manageUsers", subAction: "get", role: USER.role});
     if(res.status === "success") {
@@ -578,28 +575,60 @@ function executeExport() {
     else if (currentExportType === 'print') { let win = window.open('', '', 'width=900,height=600'); let html = `<html><head><title>${fileName}</title><style>table{width:100%; border-collapse:collapse;} th,td{border:1px solid #000; padding:5px;}</style></head><body><h2>Dr. Nimmi Das Lab - ${fileName}</h2><table><thead><tr>`; selectedCols.forEach(c => html += `<th>${c}</th>`); html += `</tr></thead><tbody>`; exportData.forEach(row => { html += `<tr>`; selectedCols.forEach(c => html += `<td>${row[c] || ''}</td>`); html += `</tr>`; }); html += `</tbody></table></body></html>`; win.document.write(html); win.document.close(); win.print(); }
 }
 
+// -------------------------------------------------------------
+// GLOBAL EVENT LISTENERS (Virtualization & Cascading Dropdowns)
+// -------------------------------------------------------------
 document.addEventListener('DOMContentLoaded', () => {
-    document.getElementById('tableBody').addEventListener('input', function(e) {
-        if (!e.target.matches('input[list], textarea[list]')) return;
+    
+    // 1. SMART CASCADING DROPDOWNS
+    function handleDatalist(e) {
+        if (!e.target.matches('input[list]')) return;
         const term = e.target.value.toLowerCase().trim();
-        const listId = e.target.getAttribute('list'); const dataList = document.getElementById(listId);
-        if (!dataList) return; if (term.length === 0) { dataList.innerHTML = ''; return; }
+        const listId = e.target.getAttribute('list'); 
+        const dataList = document.getElementById(listId);
+        if (!dataList) return; 
+        
+        // Cascading Logic: Check if an Item is already selected in this row
+        const tr = e.target.closest('tr');
+        let currentItem = "";
+        if (tr && tr.querySelector('.pItem')) {
+            currentItem = tr.querySelector('.pItem').value.toLowerCase().trim();
+        }
         
         let count = 0; let optionsHTML = ''; const added = new Set();
         
         for (const [dbId, p] of Object.entries(productDB)) {
-            if (count >= 25) break;
+            if (count >= 50) break; // Show up to 50 dropdown options
             let val = null;
-            if (listId === 'itemList' && p.item && p.item.toLowerCase().includes(term)) val = p.item;
-            else if (listId === 'compList' && p.prefComp && p.prefComp.toLowerCase().includes(term)) val = p.prefComp;
+            
+            if (listId === 'itemList' && p.item && p.item.toLowerCase().includes(term)) {
+                val = p.item;
+            }
+            else if (listId === 'specsList' && p.specs && p.specs.toLowerCase().includes(term)) {
+                // If an item is already typed, ONLY show specs for that specific item
+                if (!currentItem || (p.item && p.item.toLowerCase() === currentItem)) val = p.specs;
+            }
+            else if (listId === 'compList' && p.prefComp && p.prefComp.toLowerCase().includes(term)) {
+                // If an item is already typed, ONLY show companies for that specific item
+                if (!currentItem || (p.item && p.item.toLowerCase() === currentItem)) val = p.prefComp;
+            }
             
             if (val && !added.has(val)) { added.add(val); optionsHTML += `<option value="${val}">`; count++; }
         }
         dataList.innerHTML = optionsHTML;
-    });
+    }
 
-    document.getElementById('invSearch').addEventListener('input', function() { inventorySearchTerm = this.value; renderInventoryTable(); });
+    // Trigger dropdown calculation on Click, Focus, and Typing
+    document.getElementById('tableBody').addEventListener('input', handleDatalist);
+    document.getElementById('tableBody').addEventListener('click', handleDatalist);
+    document.getElementById('tableBody').addEventListener('focusin', handleDatalist);
+
+    // 2. INVENTORY MODAL SMART SEARCH
+    document.getElementById('invSearch').addEventListener('input', function() { 
+        inventorySearchTerm = this.value; renderInventoryTable(); 
+    });
     
+    // 3. MAIN TABLE SMART SEARCH FILTER
     document.getElementById('searchInput').addEventListener('input', function() {
         const keywords = this.value.toLowerCase().trim().split(/[\s;,]+/).filter(kw => kw.length > 0);
         const rows = document.getElementById('tableBody').getElementsByTagName('tr');
