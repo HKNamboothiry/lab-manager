@@ -616,15 +616,33 @@ function executeExport() {
     const listMeta = activeLists.find(l => l.name === baseListName);
     const qAddress = listMeta ? listMeta.quoteAddress : "";
 
+    // -- NEW: Grab the current Budget Data --
+    const budgetAllocated = parseFloat(document.getElementById('budgetInHand').value) || 0;
+    const totalUsed = parseFloat(document.getElementById('totalBudget').innerText.replace('₹','')) || 0;
+    const totalRemaining = budgetAllocated - totalUsed;
+
     let sourceData = currentListData.filter(r => !r._isEditing);
     if(mode !== "ALL") sourceData = sourceData.filter(r => r['Selected Vendor'] === mode);
     const exportData = sourceData.map((row, index) => { let obj = {}; selectedCols.forEach(col => { obj[col] = (col === "SL No") ? (index + 1) : row[col]; }); return obj; });
 
+    // -- NEW: Format the Budget Summary for Excel and CSV --
+    const summaryData = [...exportData, 
+        {}, // Empty Spacer Row
+        { [selectedCols[0]]: "BUDGET SUMMARY" },
+        { [selectedCols[0]]: "Total Budget Allocated:", [selectedCols[1]]: `Rs. ${budgetAllocated.toFixed(2)}` },
+        { [selectedCols[0]]: "Total Used:", [selectedCols[1]]: `Rs. ${totalUsed.toFixed(2)}` },
+        { [selectedCols[0]]: "Total Remaining:", [selectedCols[1]]: `Rs. ${totalRemaining.toFixed(2)}` }
+    ];
+
     if (currentExportType === 'excel') { 
-        const ws = XLSX.utils.json_to_sheet(exportData); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Export"); XLSX.writeFile(wb, `${fileName}.xlsx`); 
+        // Feed summaryData to Excel instead of exportData
+        const ws = XLSX.utils.json_to_sheet(summaryData, {header: selectedCols}); 
+        const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Export"); XLSX.writeFile(wb, `${fileName}.xlsx`); 
     } 
     else if (currentExportType === 'csv') { 
-        const blob = new Blob([XLSX.utils.sheet_to_csv(XLSX.utils.json_to_sheet(exportData))], { type: 'text/csv;charset=utf-8;' }); const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = `${fileName}.csv`; link.click(); 
+        // Feed summaryData to CSV instead of exportData
+        const ws = XLSX.utils.json_to_sheet(summaryData, {header: selectedCols});
+        const blob = new Blob([XLSX.utils.sheet_to_csv(ws)], { type: 'text/csv;charset=utf-8;' }); const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = `${fileName}.csv`; link.click(); 
     } 
     else if (currentExportType === 'pdf') { 
         const doc = new jspdf.jsPDF('landscape'); 
@@ -636,17 +654,38 @@ function executeExport() {
             doc.text(splitAddress, 14, 22);
             startYPos = 22 + (splitAddress.length * 5);
         }
+        
+        // Draw Table
         doc.autoTable({ head: [selectedCols], body: exportData.map(obj => selectedCols.map(col => obj[col])), startY: startYPos, styles: { fontSize: 8 } }); 
+        
+        // -- NEW: Draw Budget Summary at the bottom of the PDF --
+        let finalY = doc.lastAutoTable.finalY + 10;
+        doc.setFontSize(10);
+        doc.setFont(undefined, 'bold');
+        doc.text("Budget Summary", 14, finalY);
+        doc.setFont(undefined, 'normal');
+        doc.text(`Total Budget Allocated: Rs. ${budgetAllocated.toFixed(2)}`, 14, finalY + 6);
+        doc.text(`Total Used: Rs. ${totalUsed.toFixed(2)}`, 14, finalY + 12);
+        doc.text(`Total Remaining: Rs. ${totalRemaining.toFixed(2)}`, 14, finalY + 18);
+        
         doc.save(`${fileName}.pdf`); 
     } 
     else if (currentExportType === 'print') { 
         let win = window.open('', '', 'width=900,height=600'); 
-        let html = `<html><head><title>${fileName}</title><style>table{width:100%; border-collapse:collapse;} th,td{border:1px solid #000; padding:5px; font-size:12px;}</style></head><body>`;
+        let html = `<html><head><title>${fileName}</title><style>table{width:100%; border-collapse:collapse;} th,td{border:1px solid #000; padding:5px; font-size:12px;} .summary{margin-top:20px; font-size:14px;}</style></head><body>`;
         html += `<h2>Dr. Nimmi Das Lab - ${fileName}</h2>`;
         if(qAddress) { html += `<p style="font-size:14px;"><strong>Quote Address:</strong><br>${qAddress.replace(/\n/g, '<br>')}</p>`; }
         html += `<table><thead><tr>`; selectedCols.forEach(c => html += `<th>${c}</th>`); html += `</tr></thead><tbody>`; 
         exportData.forEach(row => { html += `<tr>`; selectedCols.forEach(c => html += `<td>${row[c] || ''}</td>`); html += `</tr>`; }); 
-        html += `</tbody></table></body></html>`; win.document.write(html); win.document.close(); win.print(); 
+        html += `</tbody></table>`; 
+        
+        // -- NEW: Draw Budget Summary at the bottom of the printed page --
+        html += `<div class="summary"><strong>Budget Summary</strong><br>
+                 Total Budget Allocated: ₹${budgetAllocated.toFixed(2)}<br>
+                 Total Used: ₹${totalUsed.toFixed(2)}<br>
+                 Total Remaining: ₹${totalRemaining.toFixed(2)}</div>`;
+                 
+        html += `</body></html>`; win.document.write(html); win.document.close(); win.print(); 
     }
 }
 
