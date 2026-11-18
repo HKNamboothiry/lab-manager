@@ -157,11 +157,12 @@ function renderTable() {
                 </td>`;
             }).join('');
             
-            // LIVE EDITABLE COLUMNS RESTORED HERE
+            // Duplicate row button added here
             tbody.innerHTML += `<tr>
                 <td class="sticky-col-0">${i + 1}</td>
                 <td class="sticky-col-1 text-center text-nowrap">
                     <button class="btn btn-sm btn-outline-primary py-0 px-1" onclick="editRow(${i})" title="Edit"><i class="bi bi-pencil-square"></i></button>
+                    <button class="btn btn-sm btn-outline-secondary py-0 px-1 ms-1" onclick="duplicateRow(${i})" title="Duplicate Row"><i class="bi bi-copy"></i></button>
                     <button class="btn btn-sm btn-outline-danger py-0 px-1 ms-1" onclick="deleteRow(${i})" title="Delete"><i class="bi bi-trash"></i></button>
                 </td>
                 <td class="sticky-col-2 fw-bold">${row['Item'] || ''}</td>
@@ -223,11 +224,9 @@ function checkNewUnit(sel) {
     }
 }
 
-// LIVE UPDATE ENGINE FOR MAIN VIEW
 function updateLiveRow(i, field, val) {
     currentListData[i][field] = val;
     
-    // Auto-multiply Quantity x Price if you change the quantity while a vendor is already active
     if (field === 'Required Quantity') {
         let sv = currentListData[i]['Selected Vendor'];
         if (sv && currentListData[i][sv] && currentListData[i][sv] !== 'NA') {
@@ -265,7 +264,6 @@ function handleEnter(e, elem, index) {
             tr.querySelector('.pCode').value = match.code || "";
             toggleCode(tr.querySelector('.pComp'));
             
-            // Protect manually typed Est Price
             if (!tr.querySelector('.pEstPrice').value) tr.querySelector('.pEstPrice').value = match.estPrice || "";
             
             const uSel = tr.querySelector('.pUnit');
@@ -346,6 +344,20 @@ function addNewRow() {
     const tContainer = document.querySelector('.table-responsive'); tContainer.scrollTop = tContainer.scrollHeight;
 }
 
+// DUPLICATE ROW FUNCTION
+function duplicateRow(i) {
+    // Make a deep copy of the row so it's fully detached from the original
+    let clonedRow = JSON.parse(JSON.stringify(currentListData[i]));
+    
+    // Put it in edit mode directly beneath the original row
+    clonedRow._isEditing = true;
+    clonedRow._isNew = true; 
+    delete clonedRow._origState;
+    
+    currentListData.splice(i + 1, 0, clonedRow);
+    renderTable();
+}
+
 function editRow(i) {
     currentListData[i]._isEditing = true;
     currentListData[i]._origState = {...currentListData[i]}; 
@@ -371,7 +383,8 @@ async function saveRow(i) {
     if (!item) return alert("Item Name is required.");
     if (qty < 1) return alert("Quantity must be at least 1.");
 
-    let sv = currentListData[i]._origState ? currentListData[i]._origState['Selected Vendor'] : '';
+    const orig = currentListData[i]._origState || {};
+    let sv = orig['Selected Vendor'] || '';
     
     currentListData[i] = {
         'Item': item, 'Item Specs': specs, 'Preferred Company': tr.querySelector('.pComp').value || 'Any',
@@ -380,7 +393,9 @@ async function saveRow(i) {
         'Selected Vendor': sv, _isEditing: false
     };
 
-    activeVendors.forEach(v => { currentListData[i][v] = currentListData[i]._origState ? currentListData[i]._origState[v] : ''; });
+    activeVendors.forEach(v => { 
+        currentListData[i][v] = orig[v] !== undefined ? orig[v] : ''; 
+    });
     
     if(sv && currentListData[i][sv] && currentListData[i][sv] !== 'NA') {
         currentListData[i]['Total Estimate'] = (parseFloat(currentListData[i][sv]) * qty).toFixed(2);
@@ -616,7 +631,6 @@ function executeExport() {
     const listMeta = activeLists.find(l => l.name === baseListName);
     const qAddress = listMeta ? listMeta.quoteAddress : "";
 
-    // -- NEW: Grab the current Budget Data --
     const budgetAllocated = parseFloat(document.getElementById('budgetInHand').value) || 0;
     const totalUsed = parseFloat(document.getElementById('totalBudget').innerText.replace('₹','')) || 0;
     const totalRemaining = budgetAllocated - totalUsed;
@@ -625,9 +639,8 @@ function executeExport() {
     if(mode !== "ALL") sourceData = sourceData.filter(r => r['Selected Vendor'] === mode);
     const exportData = sourceData.map((row, index) => { let obj = {}; selectedCols.forEach(col => { obj[col] = (col === "SL No") ? (index + 1) : row[col]; }); return obj; });
 
-    // -- NEW: Format the Budget Summary for Excel and CSV --
     const summaryData = [...exportData, 
-        {}, // Empty Spacer Row
+        {}, 
         { [selectedCols[0]]: "BUDGET SUMMARY" },
         { [selectedCols[0]]: "Total Budget Allocated:", [selectedCols[1]]: `Rs. ${budgetAllocated.toFixed(2)}` },
         { [selectedCols[0]]: "Total Used:", [selectedCols[1]]: `Rs. ${totalUsed.toFixed(2)}` },
@@ -635,12 +648,10 @@ function executeExport() {
     ];
 
     if (currentExportType === 'excel') { 
-        // Feed summaryData to Excel instead of exportData
         const ws = XLSX.utils.json_to_sheet(summaryData, {header: selectedCols}); 
         const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Export"); XLSX.writeFile(wb, `${fileName}.xlsx`); 
     } 
     else if (currentExportType === 'csv') { 
-        // Feed summaryData to CSV instead of exportData
         const ws = XLSX.utils.json_to_sheet(summaryData, {header: selectedCols});
         const blob = new Blob([XLSX.utils.sheet_to_csv(ws)], { type: 'text/csv;charset=utf-8;' }); const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = `${fileName}.csv`; link.click(); 
     } 
@@ -655,10 +666,8 @@ function executeExport() {
             startYPos = 22 + (splitAddress.length * 5);
         }
         
-        // Draw Table
         doc.autoTable({ head: [selectedCols], body: exportData.map(obj => selectedCols.map(col => obj[col])), startY: startYPos, styles: { fontSize: 8 } }); 
         
-        // -- NEW: Draw Budget Summary at the bottom of the PDF --
         let finalY = doc.lastAutoTable.finalY + 10;
         doc.setFontSize(10);
         doc.setFont(undefined, 'bold');
@@ -679,7 +688,6 @@ function executeExport() {
         exportData.forEach(row => { html += `<tr>`; selectedCols.forEach(c => html += `<td>${row[c] || ''}</td>`); html += `</tr>`; }); 
         html += `</tbody></table>`; 
         
-        // -- NEW: Draw Budget Summary at the bottom of the printed page --
         html += `<div class="summary"><strong>Budget Summary</strong><br>
                  Total Budget Allocated: ₹${budgetAllocated.toFixed(2)}<br>
                  Total Used: ₹${totalUsed.toFixed(2)}<br>
