@@ -120,7 +120,7 @@ function renderTable() {
         <th class="sticky-col-0">SL No</th>
         <th class="sticky-col-1 text-center">Action</th>
         <th class="sticky-col-2">Item</th>
-        <th class="specs-col">Item Specs</th>
+        <th class="sticky-col-3 specs-col">Item Specs</th>
         <th>Preferred Company</th>
         <th>Product Code</th>
         <th>Req Qty</th>
@@ -164,7 +164,7 @@ function renderTable() {
                     <button class="btn btn-sm btn-outline-danger py-0 px-1 ms-1" onclick="deleteRow(${i})" title="Delete"><i class="bi bi-trash"></i></button>
                 </td>
                 <td class="sticky-col-2 fw-bold">${row['Item'] || ''}</td>
-                <td class="specs-col text-wrap">${row['Item Specs'] || ''}</td>
+                <td class="sticky-col-3 specs-col text-wrap">${row['Item Specs'] || ''}</td>
                 <td>${row['Preferred Company'] || ''}</td>
                 <td>${row['Product Code'] || ''}</td>
                 <td>${row['Required Quantity'] || ''}</td>
@@ -185,7 +185,7 @@ function renderTable() {
                     <button class="btn btn-sm btn-danger py-0 px-1 ms-1" onclick="cancelRow(${i})" title="Cancel"><i class="bi bi-x-lg"></i></button>
                 </td>
                 <td class="sticky-col-2"><input type="text" class="form-control form-control-sm pItem fw-bold" value="${row['Item'] || ''}" list="itemList" onkeydown="handleEnter(event, this, ${i})" placeholder="Item Name"></td>
-                <td class="specs-col"><input type="text" class="form-control form-control-sm pSpecs" value="${row['Item Specs'] || ''}" list="specsList" placeholder="Specs (Capacity...)" onkeydown="handleEnter(event, this, ${i})"></td>
+                <td class="sticky-col-3 specs-col"><input type="text" class="form-control form-control-sm pSpecs" value="${row['Item Specs'] || ''}" list="specsList" placeholder="Specs (Capacity...)" onkeydown="handleEnter(event, this, ${i})"></td>
                 <td><input type="text" class="form-control form-control-sm pComp" value="${row['Preferred Company'] || 'Any'}" list="compList" onchange="toggleCode(this)"></td>
                 <td><input type="text" class="form-control form-control-sm pCode" value="${row['Product Code'] || ''}" ${isAny ? 'disabled' : ''}></td>
                 <td><input type="number" class="form-control form-control-sm pQty number-box" value="${row['Required Quantity'] || ''}" min="1"></td>
@@ -389,6 +389,8 @@ function manageList() {
     const meta = activeLists.find(l => l.name === lName);
     document.getElementById('listRename').value = lName;
     document.getElementById('listCollabs').value = meta.collabs.join(',');
+    document.getElementById('listQuoteAddress').value = meta.quoteAddress || '';
+    
     if (USER.role === "Admin" || USER.role === "Lab Supervisor" || meta.owner === USER.username) document.getElementById('listRename').disabled = false;
     else document.getElementById('listRename').disabled = true;
     new bootstrap.Modal(document.getElementById('listModal')).show();
@@ -409,7 +411,12 @@ async function deleteList() {
     }
 }
 async function saveListSettings() {
-    await apiPost({action: "manageList", subAction: "updateMeta", listName: document.getElementById('listSelector').value, collabs: document.getElementById('listCollabs').value});
+    await apiPost({
+        action: "manageList", subAction: "updateMeta", 
+        listName: document.getElementById('listSelector').value, 
+        collabs: document.getElementById('listCollabs').value,
+        quoteAddress: document.getElementById('listQuoteAddress').value
+    });
     bootstrap.Modal.getInstance(document.getElementById('listModal')).hide(); fetchInitData();
 }
 
@@ -562,17 +569,46 @@ function executeExport() {
     bootstrap.Modal.getInstance(document.getElementById('exportModal')).hide();
     const selectedCols = Array.from(document.querySelectorAll('.exp-chk:checked')).map(cb => cb.value);
     if(selectedCols.length === 0) return alert("Select at least one column.");
-    const mode = document.getElementById('exportVendorSelect').value; const baseListName = document.getElementById('listSelector').value;
+    
+    const mode = document.getElementById('exportVendorSelect').value; 
+    const baseListName = document.getElementById('listSelector').value;
     const fileName = mode === "ALL" ? baseListName : `${baseListName}_${mode}`;
+    
+    const listMeta = activeLists.find(l => l.name === baseListName);
+    const qAddress = listMeta ? listMeta.quoteAddress : "";
 
     let sourceData = currentListData.filter(r => !r._isEditing);
     if(mode !== "ALL") sourceData = sourceData.filter(r => r['Selected Vendor'] === mode);
     const exportData = sourceData.map((row, index) => { let obj = {}; selectedCols.forEach(col => { obj[col] = (col === "SL No") ? (index + 1) : row[col]; }); return obj; });
 
-    if (currentExportType === 'excel') { const ws = XLSX.utils.json_to_sheet(exportData); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Export"); XLSX.writeFile(wb, `${fileName}.xlsx`); } 
-    else if (currentExportType === 'csv') { const blob = new Blob([XLSX.utils.sheet_to_csv(XLSX.utils.json_to_sheet(exportData))], { type: 'text/csv;charset=utf-8;' }); const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = `${fileName}.csv`; link.click(); } 
-    else if (currentExportType === 'pdf') { const doc = new jspdf.jsPDF('landscape'); doc.text(`Dr. Nimmi Das Lab - ${fileName}`, 14, 15); doc.autoTable({ head: [selectedCols], body: exportData.map(obj => selectedCols.map(col => obj[col])), startY: 20, styles: { fontSize: 8 } }); doc.save(`${fileName}.pdf`); } 
-    else if (currentExportType === 'print') { let win = window.open('', '', 'width=900,height=600'); let html = `<html><head><title>${fileName}</title><style>table{width:100%; border-collapse:collapse;} th,td{border:1px solid #000; padding:5px;}</style></head><body><h2>Dr. Nimmi Das Lab - ${fileName}</h2><table><thead><tr>`; selectedCols.forEach(c => html += `<th>${c}</th>`); html += `</tr></thead><tbody>`; exportData.forEach(row => { html += `<tr>`; selectedCols.forEach(c => html += `<td>${row[c] || ''}</td>`); html += `</tr>`; }); html += `</tbody></table></body></html>`; win.document.write(html); win.document.close(); win.print(); }
+    if (currentExportType === 'excel') { 
+        const ws = XLSX.utils.json_to_sheet(exportData); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Export"); XLSX.writeFile(wb, `${fileName}.xlsx`); 
+    } 
+    else if (currentExportType === 'csv') { 
+        const blob = new Blob([XLSX.utils.sheet_to_csv(XLSX.utils.json_to_sheet(exportData))], { type: 'text/csv;charset=utf-8;' }); const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = `${fileName}.csv`; link.click(); 
+    } 
+    else if (currentExportType === 'pdf') { 
+        const doc = new jspdf.jsPDF('landscape'); 
+        doc.setFontSize(14); doc.text(`Dr. Nimmi Das Lab - ${fileName}`, 14, 15);
+        let startYPos = 20;
+        if(qAddress) {
+            doc.setFontSize(10);
+            const splitAddress = doc.splitTextToSize(`Quote Address: ${qAddress.replace(/\n/g, ', ')}`, 260);
+            doc.text(splitAddress, 14, 22);
+            startYPos = 22 + (splitAddress.length * 5);
+        }
+        doc.autoTable({ head: [selectedCols], body: exportData.map(obj => selectedCols.map(col => obj[col])), startY: startYPos, styles: { fontSize: 8 } }); 
+        doc.save(`${fileName}.pdf`); 
+    } 
+    else if (currentExportType === 'print') { 
+        let win = window.open('', '', 'width=900,height=600'); 
+        let html = `<html><head><title>${fileName}</title><style>table{width:100%; border-collapse:collapse;} th,td{border:1px solid #000; padding:5px; font-size:12px;}</style></head><body>`;
+        html += `<h2>Dr. Nimmi Das Lab - ${fileName}</h2>`;
+        if(qAddress) { html += `<p style="font-size:14px;"><strong>Quote Address:</strong><br>${qAddress.replace(/\n/g, '<br>')}</p>`; }
+        html += `<table><thead><tr>`; selectedCols.forEach(c => html += `<th>${c}</th>`); html += `</tr></thead><tbody>`; 
+        exportData.forEach(row => { html += `<tr>`; selectedCols.forEach(c => html += `<td>${row[c] || ''}</td>`); html += `</tr>`; }); 
+        html += `</tbody></table></body></html>`; win.document.write(html); win.document.close(); win.print(); 
+    }
 }
 
 // -------------------------------------------------------------
@@ -580,7 +616,6 @@ function executeExport() {
 // -------------------------------------------------------------
 document.addEventListener('DOMContentLoaded', () => {
     
-    // 1. SMART CASCADING DROPDOWNS
     function handleDatalist(e) {
         if (!e.target.matches('input[list]')) return;
         const term = e.target.value.toLowerCase().trim();
@@ -588,7 +623,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const dataList = document.getElementById(listId);
         if (!dataList) return; 
         
-        // Cascading Logic: Check if an Item is already selected in this row
         const tr = e.target.closest('tr');
         let currentItem = "";
         if (tr && tr.querySelector('.pItem')) {
@@ -598,18 +632,16 @@ document.addEventListener('DOMContentLoaded', () => {
         let count = 0; let optionsHTML = ''; const added = new Set();
         
         for (const [dbId, p] of Object.entries(productDB)) {
-            if (count >= 50) break; // Show up to 50 dropdown options
+            if (count >= 50) break;
             let val = null;
             
             if (listId === 'itemList' && p.item && p.item.toLowerCase().includes(term)) {
                 val = p.item;
             }
             else if (listId === 'specsList' && p.specs && p.specs.toLowerCase().includes(term)) {
-                // If an item is already typed, ONLY show specs for that specific item
                 if (!currentItem || (p.item && p.item.toLowerCase() === currentItem)) val = p.specs;
             }
             else if (listId === 'compList' && p.prefComp && p.prefComp.toLowerCase().includes(term)) {
-                // If an item is already typed, ONLY show companies for that specific item
                 if (!currentItem || (p.item && p.item.toLowerCase() === currentItem)) val = p.prefComp;
             }
             
@@ -618,17 +650,14 @@ document.addEventListener('DOMContentLoaded', () => {
         dataList.innerHTML = optionsHTML;
     }
 
-    // Trigger dropdown calculation on Click, Focus, and Typing
     document.getElementById('tableBody').addEventListener('input', handleDatalist);
     document.getElementById('tableBody').addEventListener('click', handleDatalist);
     document.getElementById('tableBody').addEventListener('focusin', handleDatalist);
 
-    // 2. INVENTORY MODAL SMART SEARCH
     document.getElementById('invSearch').addEventListener('input', function() { 
         inventorySearchTerm = this.value; renderInventoryTable(); 
     });
     
-    // 3. MAIN TABLE SMART SEARCH FILTER
     document.getElementById('searchInput').addEventListener('input', function() {
         const keywords = this.value.toLowerCase().trim().split(/[\s;,]+/).filter(kw => kw.length > 0);
         const rows = document.getElementById('tableBody').getElementsByTagName('tr');
