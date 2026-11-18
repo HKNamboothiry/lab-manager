@@ -157,6 +157,7 @@ function renderTable() {
                 </td>`;
             }).join('');
             
+            // LIVE EDITABLE COLUMNS RESTORED HERE
             tbody.innerHTML += `<tr>
                 <td class="sticky-col-0">${i + 1}</td>
                 <td class="sticky-col-1 text-center text-nowrap">
@@ -167,9 +168,16 @@ function renderTable() {
                 <td class="sticky-col-3 specs-col text-wrap">${row['Item Specs'] || ''}</td>
                 <td>${row['Preferred Company'] || ''}</td>
                 <td>${row['Product Code'] || ''}</td>
-                <td>${row['Required Quantity'] || ''}</td>
-                <td>${row['Unit'] || ''}</td>
-                <td>${row['Estimated Price'] || ''}</td>
+                
+                <td><input type="number" class="form-control form-control-sm number-box" value="${row['Required Quantity'] || ''}" min="1" onchange="updateLiveRow(${i}, 'Required Quantity', this.value)"></td>
+                <td>
+                    <select class="form-select form-select-sm number-box" onchange="updateLiveUnit(${i}, this)">
+                        <option value="${row['Unit'] || 'Piece'}" selected>${row['Unit'] || 'Piece'}</option>
+                        <option value="Box">Box</option><option value="Packet">Packet</option><option value="Roll">Roll</option><option value="_NEW_">+ Add</option>
+                    </select>
+                </td>
+                <td><input type="number" step="0.01" class="form-control form-control-sm number-box" value="${row['Estimated Price'] || ''}" onchange="updateLiveRow(${i}, 'Estimated Price', this.value)"></td>
+                
                 <td class="fw-bold text-primary">${selVendor}</td>
                 <td class="fw-bold text-success">₹${totalEst.toFixed(2)}</td>
                 ${vendorCells}
@@ -188,6 +196,7 @@ function renderTable() {
                 <td class="sticky-col-3 specs-col"><input type="text" class="form-control form-control-sm pSpecs" value="${row['Item Specs'] || ''}" list="specsList" placeholder="Specs (Capacity...)" onkeydown="handleEnter(event, this, ${i})"></td>
                 <td><input type="text" class="form-control form-control-sm pComp" value="${row['Preferred Company'] || 'Any'}" list="compList" onchange="toggleCode(this)"></td>
                 <td><input type="text" class="form-control form-control-sm pCode" value="${row['Product Code'] || ''}" ${isAny ? 'disabled' : ''}></td>
+                
                 <td><input type="number" class="form-control form-control-sm pQty number-box" value="${row['Required Quantity'] || ''}" min="1"></td>
                 <td>
                     <select class="form-select form-select-sm pUnit number-box" onchange="checkNewUnit(this)">
@@ -214,6 +223,34 @@ function checkNewUnit(sel) {
     }
 }
 
+// LIVE UPDATE ENGINE FOR MAIN VIEW
+function updateLiveRow(i, field, val) {
+    currentListData[i][field] = val;
+    
+    // Auto-multiply Quantity x Price if you change the quantity while a vendor is already active
+    if (field === 'Required Quantity') {
+        let sv = currentListData[i]['Selected Vendor'];
+        if (sv && currentListData[i][sv] && currentListData[i][sv] !== 'NA') {
+            let price = parseFloat(currentListData[i][sv]) || 0;
+            let qty = parseFloat(val) || 0;
+            currentListData[i]['Total Estimate'] = (price * qty).toFixed(2);
+        }
+        calcTotal();
+        renderTable(); 
+    }
+}
+
+function updateLiveUnit(i, sel) {
+    if(sel.value === "_NEW_") {
+        const u = prompt("Enter new unit type:");
+        if(u) { currentListData[i]['Unit'] = u; } 
+        else { sel.value = currentListData[i]['Unit'] || 'Piece'; return; }
+    } else {
+        currentListData[i]['Unit'] = sel.value;
+    }
+    renderTable();
+}
+
 function handleEnter(e, elem, index) {
     if (e.key === 'Enter' && !e.shiftKey) { 
         e.preventDefault();
@@ -227,7 +264,9 @@ function handleEnter(e, elem, index) {
             tr.querySelector('.pComp').value = match.prefComp || "Any";
             tr.querySelector('.pCode').value = match.code || "";
             toggleCode(tr.querySelector('.pComp'));
-            tr.querySelector('.pEstPrice').value = match.estPrice || "";
+            
+            // Protect manually typed Est Price
+            if (!tr.querySelector('.pEstPrice').value) tr.querySelector('.pEstPrice').value = match.estPrice || "";
             
             const uSel = tr.querySelector('.pUnit');
             if(![...uSel.options].some(o => o.value === match.unit)) uSel.add(new Option(match.unit, match.unit));
@@ -300,7 +339,7 @@ function calcTotal() {
 }
 
 function addNewRow() {
-    let newRow = { _isEditing: true, _isNew: true, 'Required Quantity': 1 };
+    let newRow = { _isEditing: true, _isNew: true, 'Required Quantity': 1, 'Unit': 'Piece' };
     activeVendors.forEach(v => newRow[v] = "");
     currentListData.push(newRow);
     renderTable();
