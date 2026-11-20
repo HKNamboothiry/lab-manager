@@ -607,93 +607,282 @@ async function deleteUser(username) {
 
 function openExportModal(type) {
     currentExportType = type;
-    let vendorOptions = `<option value="ALL">Master List (All Active)</option>`;
-    activeVendors.forEach(v => vendorOptions += `<option value="${v}">${v} List</option>`);
-    const sel = document.getElementById('exportVendorSelect'); if(sel) sel.innerHTML = vendorOptions;
-    renderExportCheckboxes(); new bootstrap.Modal(document.getElementById('exportModal')).show();
+    const cleanRows = currentListData.filter(r => !r._isEditing);
+    
+    let options = `
+        <option value="ALL">Master List (Internal - All Items)</option>
+        <option value="RFQ">Requirement List / RFQ (For Vendors - No Prices)</option>
+        <option value="ALL_VENDORS">All Concerned Vendors (Separate Sheets / Pages)</option>
+    `;
+    
+    if (activeVendors.length > 0) {
+        options += `<option disabled>────────────────────────</option>`;
+        activeVendors.forEach(v => {
+            const itemCount = cleanRows.filter(r => r['Selected Vendor'] === v).length;
+            options += `<option value="${v}">Vendor: ${v} (${itemCount} items)</option>`;
+        });
+    }
+    
+    const sel = document.getElementById('exportVendorSelect');
+    if (sel) sel.innerHTML = options;
+    
+    renderExportCheckboxes();
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('exportModal')).show();
 }
 
 function renderExportCheckboxes() {
-    let mode = document.getElementById('exportVendorSelect') ? document.getElementById('exportVendorSelect').value : "ALL";
-    let colsToOffer = (mode === "ALL") ? BASE_HEADERS.concat(activeVendors) : ["SL No", "Item", "Item Specs", "Preferred Company", "Product Code", "Required Quantity", "Unit", "Total Estimate"];
-    document.getElementById('exportColCheckboxes').innerHTML = colsToOffer.map((c, i) => `<div class="form-check"><input class="form-check-input exp-chk" type="checkbox" value="${c}" id="chk${i}" checked><label class="form-check-label" for="chk${i}">${c}</label></div>`).join('');
+    const mode = document.getElementById('exportVendorSelect') ? document.getElementById('exportVendorSelect').value : "ALL";
+    const budgetChk = document.getElementById('exportIncludeBudget');
+    
+    let colsToOffer = [];
+    let uncheckedByDefault = [];
+
+    if (mode === "ALL") {
+        colsToOffer = BASE_HEADERS.concat(activeVendors);
+        if (budgetChk) budgetChk.checked = true; // Internal master list includes budget by default
+    } else if (mode === "RFQ") {
+        colsToOffer = ["SL No", "Item", "Item Specs", "Preferred Company", "Product Code", "Required Quantity", "Unit", "Vendor Unit Price", "Vendor Total"];
+        uncheckedByDefault = ["Vendor Unit Price", "Vendor Total"]; // Optional blank columns for vendor to fill
+        if (budgetChk) budgetChk.checked = false; // Hide internal budget from external RFQ
+    } else {
+        // Individual concerned vendor OR All Concerned Vendors
+        colsToOffer = ["SL No", "Item", "Item Specs", "Preferred Company", "Product Code", "Required Quantity", "Unit", "Unit Price", "Total Estimate"];
+        if (budgetChk) budgetChk.checked = false; // Hide internal budget from vendor POs
+    }
+
+    document.getElementById('exportColCheckboxes').innerHTML = colsToOffer.map((c, i) => {
+        const isChecked = !uncheckedByDefault.includes(c) ? "checked" : "";
+        return `<div class="form-check">
+            <input class="form-check-input exp-chk" type="checkbox" value="${c}" id="chk${i}" ${isChecked}>
+            <label class="form-check-label" for="chk${i}">${c}</label>
+        </div>`;
+    }).join('');
 }
 
 function executeExport() {
-    bootstrap.Modal.getInstance(document.getElementById('exportModal')).hide();
+    const modalInstance = bootstrap.Modal.getInstance(document.getElementById('exportModal'));
+    if (modalInstance) modalInstance.hide();
+
     const selectedCols = Array.from(document.querySelectorAll('.exp-chk:checked')).map(cb => cb.value);
-    if(selectedCols.length === 0) return alert("Select at least one column.");
-    
-    const mode = document.getElementById('exportVendorSelect').value; 
+    if (selectedCols.length === 0) return alert("Select at least one column.");
+
+    const mode = document.getElementById('exportVendorSelect').value;
+    const includeBudget = document.getElementById('exportIncludeBudget') ? document.getElementById('exportIncludeBudget').checked : false;
     const baseListName = document.getElementById('listSelector').value;
-    const fileName = mode === "ALL" ? baseListName : `${baseListName}_${mode}`;
-    
     const listMeta = activeLists.find(l => l.name === baseListName);
     const qAddress = listMeta ? listMeta.quoteAddress : "";
 
     const budgetAllocated = parseFloat(document.getElementById('budgetInHand').value) || 0;
-    const totalUsed = parseFloat(document.getElementById('totalBudget').innerText.replace('₹','')) || 0;
+    const totalUsed = parseFloat(document.getElementById('totalBudget').innerText.replace('₹', '')) || 0;
     const totalRemaining = budgetAllocated - totalUsed;
 
-    let sourceData = currentListData.filter(r => !r._isEditing);
-    if(mode !== "ALL") sourceData = sourceData.filter(r => r['Selected Vendor'] === mode);
-    const exportData = sourceData.map((row, index) => { let obj = {}; selectedCols.forEach(col => { obj[col] = (col === "SL No") ? (index + 1) : row[col]; }); return obj; });
+    const cleanRows = currentListData.filter(r => !r._isEditing);
+    if (cleanRows.length === 0) return alert("No saved items to export.");
 
-    const summaryData = [...exportData, 
-        {}, 
-        { [selectedCols[0]]: "BUDGET SUMMARY" },
-        { [selectedCols[0]]: "Total Budget Allocated:", [selectedCols[1]]: `Rs. ${budgetAllocated.toFixed(2)}` },
-        { [selectedCols[0]]: "Total Used:", [selectedCols[1]]: `Rs. ${totalUsed.toFixed(2)}` },
-        { [selectedCols[0]]: "Total Remaining:", [selectedCols[1]]: `Rs. ${totalRemaining.toFixed(2)}` }
-    ];
+    // Helper to build formatted rows for a given dataset & optional vendor
+    function buildRows(rows, vendorName = null) {
+        return rows.map((row, index) => {
+            let obj = {};
+            selectedCols.forEach(col => {
+                if (col === "SL No") obj[col] = index + 1;
+                else if (col === "Unit Price" && vendorName) obj[col] = row[vendorName] || "";
+                else if (col === "Vendor Unit Price" || col === "Vendor Total") obj[col] = "";
+                else obj[col] = row[col] !== undefined ? row[col] : "";
+            });
+            return obj;
+        });
+    }
 
-    if (currentExportType === 'excel') { 
-        const ws = XLSX.utils.json_to_sheet(summaryData, {header: selectedCols}); 
-        const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Export"); XLSX.writeFile(wb, `${fileName}.xlsx`); 
-    } 
-    else if (currentExportType === 'csv') { 
-        const ws = XLSX.utils.json_to_sheet(summaryData, {header: selectedCols});
-        const blob = new Blob([XLSX.utils.sheet_to_csv(ws)], { type: 'text/csv;charset=utf-8;' }); const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = `${fileName}.csv`; link.click(); 
-    } 
-    else if (currentExportType === 'pdf') { 
-        const doc = new jspdf.jsPDF('landscape'); 
-        doc.setFontSize(14); doc.text(`Dr. Nimmi Das Lab - ${fileName}`, 14, 15);
-        let startYPos = 20;
-        if(qAddress) {
-            doc.setFontSize(10);
-            const splitAddress = doc.splitTextToSize(`Quote Address: ${qAddress.replace(/\n/g, ', ')}`, 260);
-            doc.text(splitAddress, 14, 22);
-            startYPos = 22 + (splitAddress.length * 5);
+    // Build list of export jobs (1 job normally, or 1 per concerned vendor for ALL_VENDORS)
+    let exportJobs = [];
+
+    if (mode === "ALL") {
+        exportJobs.push({
+            title: `Dr. Nimmi Das Lab - ${baseListName}`,
+            sheetName: "Master List",
+            fileName: baseListName,
+            rows: buildRows(cleanRows),
+            vendorTotal: null
+        });
+    } else if (mode === "RFQ") {
+        exportJobs.push({
+            title: `Dr. Nimmi Das Lab - Requirement List (RFQ) - ${baseListName}`,
+            sheetName: "Requirement List",
+            fileName: `${baseListName}_Requirement_List`,
+            rows: buildRows(cleanRows),
+            vendorTotal: null
+        });
+    } else if (mode === "ALL_VENDORS") {
+        const concernedVendors = activeVendors.filter(v => cleanRows.some(r => r['Selected Vendor'] === v));
+        if (concernedVendors.length === 0) {
+            return alert("No items have been assigned to any vendor yet. Select vendors or run 'Optimize Plan' first.");
         }
-        
-        doc.autoTable({ head: [selectedCols], body: exportData.map(obj => selectedCols.map(col => obj[col])), startY: startYPos, styles: { fontSize: 8 } }); 
-        
-        let finalY = doc.lastAutoTable.finalY + 10;
-        doc.setFontSize(10);
-        doc.setFont(undefined, 'bold');
-        doc.text("Budget Summary", 14, finalY);
-        doc.setFont(undefined, 'normal');
-        doc.text(`Total Budget Allocated: Rs. ${budgetAllocated.toFixed(2)}`, 14, finalY + 6);
-        doc.text(`Total Used: Rs. ${totalUsed.toFixed(2)}`, 14, finalY + 12);
-        doc.text(`Total Remaining: Rs. ${totalRemaining.toFixed(2)}`, 14, finalY + 18);
-        
-        doc.save(`${fileName}.pdf`); 
-    } 
-    else if (currentExportType === 'print') { 
-        let win = window.open('', '', 'width=900,height=600'); 
-        let html = `<html><head><title>${fileName}</title><style>table{width:100%; border-collapse:collapse;} th,td{border:1px solid #000; padding:5px; font-size:12px;} .summary{margin-top:20px; font-size:14px;}</style></head><body>`;
-        html += `<h2>Dr. Nimmi Das Lab - ${fileName}</h2>`;
-        if(qAddress) { html += `<p style="font-size:14px;"><strong>Quote Address:</strong><br>${qAddress.replace(/\n/g, '<br>')}</p>`; }
-        html += `<table><thead><tr>`; selectedCols.forEach(c => html += `<th>${c}</th>`); html += `</tr></thead><tbody>`; 
-        exportData.forEach(row => { html += `<tr>`; selectedCols.forEach(c => html += `<td>${row[c] || ''}</td>`); html += `</tr>`; }); 
-        html += `</tbody></table>`; 
-        
-        html += `<div class="summary"><strong>Budget Summary</strong><br>
-                 Total Budget Allocated: ₹${budgetAllocated.toFixed(2)}<br>
-                 Total Used: ₹${totalUsed.toFixed(2)}<br>
-                 Total Remaining: ₹${totalRemaining.toFixed(2)}</div>`;
-                 
-        html += `</body></html>`; win.document.write(html); win.document.close(); win.print(); 
+        concernedVendors.forEach(v => {
+            const vRows = cleanRows.filter(r => r['Selected Vendor'] === v);
+            const vTotal = vRows.reduce((sum, r) => sum + (parseFloat(r['Total Estimate']) || 0), 0);
+            exportJobs.push({
+                title: `Dr. Nimmi Das Lab - ${baseListName} | Vendor: ${v}`,
+                sheetName: v,
+                fileName: `${baseListName}_${v}`,
+                rows: buildRows(vRows, v),
+                vendorTotal: vTotal
+            });
+        });
+    } else {
+        const vRows = cleanRows.filter(r => r['Selected Vendor'] === mode);
+        if (vRows.length === 0) {
+            return alert(`No items are currently assigned to "${mode}".`);
+        }
+        const vTotal = vRows.reduce((sum, r) => sum + (parseFloat(r['Total Estimate']) || 0), 0);
+        exportJobs.push({
+            title: `Dr. Nimmi Das Lab - ${baseListName} | Vendor: ${mode}`,
+            sheetName: mode,
+            fileName: `${baseListName}_${mode}`,
+            rows: buildRows(vRows, mode),
+            vendorTotal: vTotal
+        });
+    }
+
+    // Helper to convert a job into a 2D array for Excel / CSV
+    function buildSheetAOA(job) {
+        let aoa = [[job.title]];
+        if (qAddress) aoa.push([`Quote / Delivery Address: ${qAddress.replace(/\n/g, ', ')}`]);
+        aoa.push([]); // Spacer
+        aoa.push(selectedCols);
+        job.rows.forEach(obj => aoa.push(selectedCols.map(col => obj[col])));
+
+        if (job.vendorTotal !== null) {
+            aoa.push([]);
+            aoa.push(["Vendor Total Estimate:", `Rs. ${job.vendorTotal.toFixed(2)}`]);
+        }
+        if (includeBudget) {
+            aoa.push([]);
+            aoa.push(["BUDGET SUMMARY"]);
+            aoa.push(["Total Budget Allocated:", `Rs. ${budgetAllocated.toFixed(2)}`]);
+            aoa.push(["Total Used:", `Rs. ${totalUsed.toFixed(2)}`]);
+            aoa.push(["Total Remaining:", `Rs. ${totalRemaining.toFixed(2)}`]);
+        }
+        return aoa;
+    }
+
+    // 1. EXCEL EXPORT (Multi-sheet workbook when ALL_VENDORS is chosen)
+    if (currentExportType === 'excel') {
+        const wb = XLSX.utils.book_new();
+        const usedNames = new Set();
+        exportJobs.forEach(job => {
+            const ws = XLSX.utils.aoa_to_sheet(buildSheetAOA(job));
+            let safeName = job.sheetName.replace(/[:\\/?*\[\]]/g, '').trim().substring(0, 31) || "Sheet";
+            let counter = 1;
+            while (usedNames.has(safeName)) {
+                safeName = safeName.substring(0, 28) + `_${counter++}`;
+            }
+            usedNames.add(safeName);
+            XLSX.utils.book_append_sheet(wb, ws, safeName);
+        });
+        const outFile = (mode === "ALL_VENDORS") ? `${baseListName}_All_Vendors.xlsx` : `${exportJobs[0].fileName}.xlsx`;
+        XLSX.writeFile(wb, outFile);
+    }
+
+    // 2. CSV EXPORT (Separate file per vendor when ALL_VENDORS is chosen)
+    else if (currentExportType === 'csv') {
+        exportJobs.forEach(job => {
+            const ws = XLSX.utils.aoa_to_sheet(buildSheetAOA(job));
+            const blob = new Blob([XLSX.utils.sheet_to_csv(ws)], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            link.href = URL.createObjectURL(blob);
+            link.download = `${job.fileName}.csv`;
+            link.click();
+        });
+    }
+
+    // 3. PDF EXPORT (Each concerned vendor starts on a fresh page)
+    else if (currentExportType === 'pdf') {
+        const doc = new jspdf.jsPDF('landscape');
+        exportJobs.forEach((job, idx) => {
+            if (idx > 0) doc.addPage();
+            doc.setFontSize(14);
+            doc.setFont(undefined, 'bold');
+            doc.text(job.title, 14, 15);
+            doc.setFont(undefined, 'normal');
+
+            let startYPos = 21;
+            if (qAddress) {
+                doc.setFontSize(10);
+                const splitAddress = doc.splitTextToSize(`Quote / Delivery Address: ${qAddress.replace(/\n/g, ', ')}`, 265);
+                doc.text(splitAddress, 14, 22);
+                startYPos = 24 + (splitAddress.length * 5);
+            }
+
+            doc.autoTable({
+                head: [selectedCols],
+                body: job.rows.map(obj => selectedCols.map(col => obj[col])),
+                startY: startYPos,
+                styles: { fontSize: 8 }
+            });
+
+            let finalY = doc.lastAutoTable.finalY + 10;
+            doc.setFontSize(10);
+
+            if (job.vendorTotal !== null) {
+                doc.setFont(undefined, 'bold');
+                doc.text(`Vendor Total Estimate: Rs. ${job.vendorTotal.toFixed(2)}`, 14, finalY);
+                doc.setFont(undefined, 'normal');
+                finalY += 10;
+            }
+            if (includeBudget) {
+                doc.setFont(undefined, 'bold');
+                doc.text("Budget Summary", 14, finalY);
+                doc.setFont(undefined, 'normal');
+                doc.text(`Total Budget Allocated: Rs. ${budgetAllocated.toFixed(2)}`, 14, finalY + 6);
+                doc.text(`Total Used: Rs. ${totalUsed.toFixed(2)}`, 14, finalY + 12);
+                doc.text(`Total Remaining: Rs. ${totalRemaining.toFixed(2)}`, 14, finalY + 18);
+            }
+        });
+        const outFile = (mode === "ALL_VENDORS") ? `${baseListName}_All_Vendors.pdf` : `${exportJobs[0].fileName}.pdf`;
+        doc.save(outFile);
+    }
+
+    // 4. PRINT EXPORT (Page-breaks cleanly between vendors)
+    else if (currentExportType === 'print') {
+        let win = window.open('', '', 'width=950,height=650');
+        let html = `<html><head><title>${baseListName}</title><style>
+            body { font-family: Arial, sans-serif; }
+            table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+            th, td { border: 1px solid #000; padding: 6px; font-size: 12px; text-align: left; }
+            th { background-color: #f2f2f2; }
+            .summary { margin-top: 15px; font-size: 14px; }
+            .vendor-page { page-break-after: always; }
+            .vendor-page:last-child { page-break-after: auto; }
+        </style></head><body>`;
+
+        exportJobs.forEach(job => {
+            html += `<div class="vendor-page">`;
+            html += `<h2>${job.title}</h2>`;
+            if (qAddress) {
+                html += `<p style="font-size:13px;"><strong>Quote / Delivery Address:</strong><br>${qAddress.replace(/\n/g, '<br>')}</p>`;
+            }
+            html += `<table><thead><tr>${selectedCols.map(c => `<th>${c}</th>`).join('')}</tr></thead><tbody>`;
+            job.rows.forEach(row => {
+                html += `<tr>${selectedCols.map(c => `<td>${row[c] !== undefined ? row[c] : ''}</td>`).join('')}</tr>`;
+            });
+            html += `</tbody></table>`;
+
+            if (job.vendorTotal !== null) {
+                html += `<div class="summary"><strong>Vendor Total Estimate: ₹${job.vendorTotal.toFixed(2)}</strong></div>`;
+            }
+            if (includeBudget) {
+                html += `<div class="summary"><strong>Budget Summary</strong><br>
+                    Total Budget Allocated: ₹${budgetAllocated.toFixed(2)}<br>
+                    Total Used: ₹${totalUsed.toFixed(2)}<br>
+                    Total Remaining: ₹${totalRemaining.toFixed(2)}</div>`;
+            }
+            html += `</div>`;
+        });
+
+        html += `</body></html>`;
+        win.document.write(html);
+        win.document.close();
+        win.print();
     }
 }
 
