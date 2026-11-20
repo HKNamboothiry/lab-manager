@@ -211,15 +211,28 @@
 </div>
 
 <div class="modal fade" id="exportModal" tabindex="-1">
-  <div class="modal-dialog modal-sm"><div class="modal-content">
-      <div class="modal-header"><h6 class="modal-title">Export Settings</h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
-      <div class="modal-body">
-          <label class="form-label fw-bold">Select Vendor to Export</label>
-          <select id="exportVendorSelect" class="form-select mb-3" onchange="renderExportCheckboxes()"><option value="ALL">Master List</option></select>
-          <label class="form-label fw-bold">Select Columns</label>
-          <div id="exportColCheckboxes"></div>
+  <div class="modal-dialog"><div class="modal-content">
+      <div class="modal-header">
+          <h6 class="modal-title fw-bold"><i class="bi bi-box-arrow-right"></i> Export Settings</h6>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
-      <div class="modal-footer p-1"><button class="btn btn-success btn-sm w-100 fw-bold" onclick="executeExport()">Confirm Export</button></div>
+      <div class="modal-body">
+          <label class="form-label fw-bold">Export Type / Target Vendor</label>
+          <select id="exportVendorSelect" class="form-select mb-3" onchange="renderExportCheckboxes()"></select>
+          
+          <label class="form-label fw-bold">Select Columns</label>
+          <div id="exportColCheckboxes" class="mb-3" style="max-height: 220px; overflow-y: auto;"></div>
+          
+          <div class="form-check border-top pt-2">
+              <input class="form-check-input" type="checkbox" id="exportIncludeBudget">
+              <label class="form-check-label small fw-bold text-secondary" for="exportIncludeBudget">
+                  Include Internal Budget Summary (Allocated / Used / Remaining)
+              </label>
+          </div>
+      </div>
+      <div class="modal-footer p-2">
+          <button class="btn btn-success btn-sm w-100 fw-bold" onclick="executeExport()">Confirm Export</button>
+      </div>
   </div></div>
 </div>
 
