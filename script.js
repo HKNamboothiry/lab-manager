@@ -9,7 +9,7 @@ let vendorDB = [];
 let latestInheritedBudget = 0;
 let currentExportType = "";
 
-const BASE_HEADERS = ["SL No", "Item", "Item Specs", "Preferred Company", "Product Code", "Required Quantity", "Unit", "Sub Quantity", "Estimated Price", "Selected Vendor", "Total Estimate"];
+const BASE_HEADERS = ["SL No", "Item", "Item Specs", "Reference Link", "Preferred Company", "Product Code", "Required Quantity", "Unit", "Sub Quantity", "Estimated Price", "Selected Vendor", "Total Estimate"];
 const DEFAULT_UNITS = ["Piece", "Packet", "Box", "Roll", "Bottle"];
 
 function isPieceUnit(unit) {
@@ -22,6 +22,43 @@ function esc(val) {
         .replace(/"/g, "&quot;")
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;");
+}
+
+function isUrl(text) {
+    return /^(https?:\/\/|www\.)/i.test((text || "").trim());
+}
+
+function normalizeUrl(text) {
+    const t = (text || "").trim();
+    return /^https?:\/\//i.test(t) ? t : `https://${t}`;
+}
+
+function formatRefHtml(refLink, extraClass = "") {
+    const clean = (refLink || "").trim();
+    if (!clean) return "";
+    const cls = extraClass ? `ref-line ${extraClass}` : "ref-line";
+    if (isUrl(clean)) {
+        const href = normalizeUrl(clean);
+        return `<div class="${cls}" title="${esc(clean)}">Reference: <a href="${esc(href)}" target="_blank" rel="noopener noreferrer">${esc(clean)}</a></div>`;
+    }
+    return `<div class="${cls}" title="${esc(clean)}">Reference: ${esc(clean)}</div>`;
+}
+
+function truncateSingleLineText(text, maxChars = 55) {
+    const clean = String(text || "").replace(/\s+/g, " ").trim();
+    if (clean.length <= maxChars) return clean;
+    return clean.slice(0, maxChars - 3) + "...";
+}
+
+function truncatePdfLine(doc, text, maxWidth) {
+    if (doc.getTextWidth(text) <= maxWidth) return text;
+    const ellipsis = "...";
+    const ellWidth = doc.getTextWidth(ellipsis);
+    let out = text;
+    while (out.length > 0 && doc.getTextWidth(out) + ellWidth > maxWidth) {
+        out = out.slice(0, -1);
+    }
+    return out + ellipsis;
 }
 
 function buildUnitOptions(selectedUnit) {
@@ -242,7 +279,10 @@ function renderTable() {
                     <button class="btn btn-sm btn-outline-danger py-0 px-1 ms-1" onclick="deleteRow(${i})" title="Delete"><i class="bi bi-trash"></i></button>
                 </td>
                 <td class="sticky-col-2 fw-bold">${esc(row['Item'])}</td>
-                <td class="sticky-col-3 specs-col text-wrap">${esc(row['Item Specs'])}</td>
+                <td class="sticky-col-3 specs-col text-wrap">
+                    <div>${esc(row['Item Specs'])}</div>
+                    ${formatRefHtml(row['Reference Link'])}
+                </td>
                 <td>${esc(row['Preferred Company'])}</td>
                 <td>${esc(row['Product Code'])}</td>
 
@@ -276,7 +316,10 @@ function renderTable() {
                     <button class="btn btn-sm btn-danger py-0 px-1 ms-1" onclick="cancelRow(${i})" title="Cancel"><i class="bi bi-x-lg"></i></button>
                 </td>
                 <td class="sticky-col-2"><input type="text" class="form-control form-control-sm pItem fw-bold" value="${esc(row['Item'])}" list="itemList" onkeydown="handleEnter(event, this, ${i})" placeholder="Item Name"></td>
-                <td class="sticky-col-3 specs-col"><input type="text" class="form-control form-control-sm pSpecs" value="${esc(row['Item Specs'])}" list="specsList" placeholder="Specs (Capacity...)" onkeydown="handleEnter(event, this, ${i})"></td>
+                <td class="sticky-col-3 specs-col">
+                    <input type="text" class="form-control form-control-sm pSpecs" value="${esc(row['Item Specs'])}" list="specsList" placeholder="Specs (Capacity...)" onkeydown="handleEnter(event, this, ${i})">
+                    <input type="text" class="form-control form-control-sm pRefLink mt-1 fst-italic" style="font-size: 10pt;" value="${esc(row['Reference Link'])}" placeholder="Reference link (optional)...">
+                </td>
                 <td><input type="text" class="form-control form-control-sm pComp" value="${esc(row['Preferred Company'] || 'Any')}" list="compList" onchange="toggleCode(this)"></td>
                 <td><input type="text" class="form-control form-control-sm pCode" value="${esc(row['Product Code'])}" ${isAny ? 'disabled' : ''}></td>
 
@@ -415,6 +458,7 @@ function handleEnter(e, elem, index) {
         if (match) {
             tr.querySelector('.pItem').value = match.item;
             tr.querySelector('.pSpecs').value = match.specs || "";
+            if (!tr.querySelector('.pRefLink').value) tr.querySelector('.pRefLink').value = match.refLink || "";
             tr.querySelector('.pComp').value = match.prefComp || "Any";
             tr.querySelector('.pCode').value = match.code || "";
             toggleCode(tr.querySelector('.pComp'));
@@ -484,7 +528,7 @@ function optimizeVendors() {
 }
 
 function addNewRow() {
-    let newRow = { _isEditing: true, _isNew: true, 'Required Quantity': 1, 'Unit': 'Piece', 'Sub Quantity': '' };
+    let newRow = { _isEditing: true, _isNew: true, 'Reference Link': '', 'Required Quantity': 1, 'Unit': 'Piece', 'Sub Quantity': '' };
     activeVendors.forEach(v => newRow[v] = "");
     currentListData.push(newRow);
     renderTable();
@@ -531,6 +575,7 @@ async function saveRow(i) {
     const tr = document.getElementById(`editRow_${i}`);
     const item = tr.querySelector('.pItem').value.trim();
     const specs = tr.querySelector('.pSpecs').value.trim();
+    const refLink = tr.querySelector('.pRefLink').value.trim();
     const qty = parseFloat(tr.querySelector('.pQty').value) || 0;
     const unitVal = tr.querySelector('.pUnit').value;
     const subQtyVal = isPieceUnit(unitVal) ? '' : tr.querySelector('.pSubQty').value.trim();
@@ -544,6 +589,7 @@ async function saveRow(i) {
     currentListData[i] = {
         'Item': item,
         'Item Specs': specs,
+        'Reference Link': refLink,
         'Preferred Company': tr.querySelector('.pComp').value.trim() || 'Any',
         'Product Code': tr.querySelector('.pCode').value.trim(),
         'Required Quantity': qty,
@@ -693,7 +739,7 @@ function renderInventoryTable() {
 
     for (const [dbId, p] of Object.entries(productDB)) {
         if (count >= MAX_RESULTS) break;
-        const searchableText = `${p.item || ''} ${p.specs || ''} ${p.prefComp || ''} ${p.code || ''} ${p.unit || ''} ${p.subQty || ''}`.toLowerCase();
+        const searchableText = `${p.item || ''} ${p.specs || ''} ${p.refLink || ''} ${p.prefComp || ''} ${p.code || ''} ${p.unit || ''} ${p.subQty || ''}`.toLowerCase();
 
         if (!keywords.every(kw => searchableText.includes(kw))) continue;
 
@@ -705,7 +751,10 @@ function renderInventoryTable() {
 
         htmlBuffer += `<tr>
             <td class="fw-bold">${esc(p.item)}</td>
-            <td class="text-wrap">${esc(p.specs)}</td>
+            <td class="text-wrap">
+                <div>${esc(p.specs)}</div>
+                ${formatRefHtml(p.refLink, 'inv-ref-line')}
+            </td>
             <td>${esc(p.prefComp)}</td>
             <td>${esc(p.code)}</td>
             <td>${esc(p.unit)}</td>
@@ -731,6 +780,7 @@ function addFromInventory(dbId) {
     let newRow = {
         'Item': p.item,
         'Item Specs': p.specs || '',
+        'Reference Link': p.refLink || '',
         'Preferred Company': p.prefComp || 'Any',
         'Product Code': p.code || '',
         'Required Quantity': 1,
@@ -755,6 +805,7 @@ function openEditProduct(dbId) {
     document.getElementById('editDbId').value = dbId;
     document.getElementById('editItem').value = p.item;
     document.getElementById('editSpecs').value = p.specs || '';
+    document.getElementById('editRefLink').value = p.refLink || '';
     document.getElementById('editComp').value = p.prefComp || 'Any';
     document.getElementById('editCode').value = p.code || '';
     document.getElementById('editUnit').value = p.unit || 'Piece';
@@ -802,6 +853,7 @@ async function submitProductEdit() {
             dbId: document.getElementById('editDbId').value,
             item: document.getElementById('editItem').value.trim(),
             specs: document.getElementById('editSpecs').value.trim(),
+            refLink: document.getElementById('editRefLink').value.trim(),
             prefComp: document.getElementById('editComp').value.trim() || 'Any',
             code: document.getElementById('editCode').value.trim(),
             unit: unitVal,
@@ -904,7 +956,8 @@ function renderExportCheckboxes() {
     let uncheckedByDefault = [];
 
     if (mode === "ALL") {
-        colsToOffer = BASE_HEADERS.concat(activeVendors);
+        // Reference Link is controlled by the dedicated ON/OFF switch (rendered below Item Specs)
+        colsToOffer = BASE_HEADERS.filter(h => h !== "Reference Link").concat(activeVendors);
         if (budgetChk) budgetChk.checked = true;
     } else if (mode === "RFQ") {
         colsToOffer = ["SL No", "Item", "Item Specs", "Preferred Company", "Product Code", "Required Quantity", "Unit", "Sub Quantity", "Vendor Unit Price", "Vendor Total"];
@@ -932,6 +985,7 @@ function executeExport() {
     if (selectedCols.length === 0) return alert("Select at least one column.");
 
     const mode = document.getElementById('exportVendorSelect').value;
+    const includeRefs = document.getElementById('exportIncludeRefs') ? document.getElementById('exportIncludeRefs').checked : true;
     const includeBudget = document.getElementById('exportIncludeBudget') ? document.getElementById('exportIncludeBudget').checked : false;
     const baseListName = document.getElementById('listSelector').value;
     const listMeta = activeLists.find(l => l.name === baseListName);
@@ -946,7 +1000,7 @@ function executeExport() {
 
     function buildRows(rows, vendorName = null) {
         return rows.map((row, index) => {
-            let obj = {};
+            let obj = { _refLink: (row['Reference Link'] || '').trim() };
             selectedCols.forEach(col => {
                 if (col === "SL No") obj[col] = index + 1;
                 else if (col === "Unit Price" && vendorName) obj[col] = row[vendorName] || "";
@@ -1011,7 +1065,16 @@ function executeExport() {
         if (qAddress) aoa.push([`Quote / Delivery Address: ${qAddress.replace(/\n/g, ', ')}`]);
         aoa.push([]);
         aoa.push(selectedCols);
-        job.rows.forEach(obj => aoa.push(selectedCols.map(col => obj[col])));
+
+        job.rows.forEach(obj => {
+            aoa.push(selectedCols.map(col => {
+                if (col === "Item Specs" && includeRefs && obj._refLink) {
+                    const refLine = `Reference: ${truncateSingleLineText(obj._refLink, 48)}`;
+                    return obj[col] ? `${obj[col]}\n${refLine}` : refLine;
+                }
+                return obj[col];
+            }));
+        });
 
         if (job.vendorTotal !== null) {
             aoa.push([]);
@@ -1053,6 +1116,8 @@ function executeExport() {
         });
     } else if (currentExportType === 'pdf') {
         const doc = new jspdf.jsPDF('landscape');
+        const specsColIndex = selectedCols.indexOf("Item Specs");
+
         exportJobs.forEach((job, idx) => {
             if (idx > 0) doc.addPage();
             doc.setFontSize(14);
@@ -1072,7 +1137,42 @@ function executeExport() {
                 head: [selectedCols],
                 body: job.rows.map(obj => selectedCols.map(col => obj[col])),
                 startY: startYPos,
-                styles: { fontSize: 8 }
+                styles: { fontSize: 8 },
+                didParseCell: function(data) {
+                    if (includeRefs && specsColIndex > -1 && data.section === 'body' && data.column.index === specsColIndex) {
+                        const ref = job.rows[data.row.index] ? job.rows[data.row.index]._refLink : "";
+                        if (ref) {
+                            // Reserve clean bottom space for one 10pt italic reference line
+                            data.cell.styles.cellPadding = { top: 2, right: 2, bottom: 6.5, left: 2 };
+                            data.cell.styles.minCellHeight = 9;
+                        }
+                    }
+                },
+                didDrawCell: function(data) {
+                    if (includeRefs && specsColIndex > -1 && data.section === 'body' && data.column.index === specsColIndex) {
+                        const ref = job.rows[data.row.index] ? job.rows[data.row.index]._refLink : "";
+                        if (ref) {
+                            const fullText = `Reference: ${ref}`;
+                            doc.setFont(undefined, 'italic');
+                            doc.setFontSize(10);
+                            doc.setTextColor(70, 70, 70);
+
+                            const maxW = Math.max(12, data.cell.width - 4);
+                            const lineText = truncatePdfLine(doc, fullText, maxW);
+                            const textX = data.cell.x + 2;
+                            const textY = data.cell.y + data.cell.height - 2;
+
+                            doc.text(lineText, textX, textY);
+                            if (isUrl(ref)) {
+                                doc.link(textX, textY - 3.5, doc.getTextWidth(lineText), 4.5, { url: normalizeUrl(ref) });
+                            }
+
+                            doc.setFont(undefined, 'normal');
+                            doc.setFontSize(8);
+                            doc.setTextColor(0, 0, 0);
+                        }
+                    }
+                }
             });
 
             let finalY = doc.lastAutoTable.finalY + 10;
@@ -1100,8 +1200,20 @@ function executeExport() {
         let html = `<html><head><title>${esc(baseListName)}</title><style>
             body { font-family: Arial, sans-serif; }
             table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-            th, td { border: 1px solid #000; padding: 6px; font-size: 12px; text-align: left; }
+            th, td { border: 1px solid #000; padding: 6px; font-size: 12px; text-align: left; vertical-align: top; }
             th { background-color: #f2f2f2; }
+            .ref-line {
+                display: block;
+                font-style: italic;
+                font-size: 10pt;
+                color: #333;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                max-width: 260px;
+                margin-top: 3px;
+            }
+            .ref-line a { color: #0d6efd; text-decoration: none; }
             .summary { margin-top: 15px; font-size: 14px; }
             .vendor-page { page-break-after: always; }
             .vendor-page:last-child { page-break-after: auto; }
@@ -1115,7 +1227,12 @@ function executeExport() {
             }
             html += `<table><thead><tr>${selectedCols.map(c => `<th>${esc(c)}</th>`).join('')}</tr></thead><tbody>`;
             job.rows.forEach(row => {
-                html += `<tr>${selectedCols.map(c => `<td>${esc(row[c])}</td>`).join('')}</tr>`;
+                html += `<tr>${selectedCols.map(c => {
+                    if (c === "Item Specs" && includeRefs && row._refLink) {
+                        return `<td><div>${esc(row[c])}</div>${formatRefHtml(row._refLink)}</td>`;
+                    }
+                    return `<td>${esc(row[c])}</td>`;
+                }).join('')}</tr>`;
             });
             html += `</tbody></table>`;
 
