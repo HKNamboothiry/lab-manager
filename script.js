@@ -6,10 +6,15 @@ let activeLists = [];
 let currentListData = [];
 let activeVendors = [];
 let vendorDB = [];
+let globalAlerts = { unacquired: [], lowStock: [] };
 let latestInheritedBudget = 0;
 let currentExportType = "";
 
-const BASE_HEADERS = ["SL No", "Item", "Item Specs", "Reference Link", "Preferred Company", "Product Code", "Required Quantity", "Unit", "Sub Quantity", "Estimated Price", "Selected Vendor", "Total Estimate"];
+const BASE_HEADERS = [
+    "SL No", "Item", "Item Specs", "Reference Link", "Preferred Company", "Product Code",
+    "Required Quantity", "Unit", "Sub Quantity", "Acquired Qty", "Acquired Sub Qty",
+    "Estimated Price", "Selected Vendor", "Total Estimate", "Bill Ref No", "Date of Procurement"
+];
 const DEFAULT_UNITS = ["Piece", "Packet", "Box", "Roll", "Bottle"];
 
 function isPieceUnit(unit) {
@@ -55,18 +60,14 @@ function truncatePdfLine(doc, text, maxWidth) {
     const ellipsis = "...";
     const ellWidth = doc.getTextWidth(ellipsis);
     let out = text;
-    while (out.length > 0 && doc.getTextWidth(out) + ellWidth > maxWidth) {
-        out = out.slice(0, -1);
-    }
+    while (out.length > 0 && doc.getTextWidth(out) + ellWidth > maxWidth) out = out.slice(0, -1);
     return out + ellipsis;
 }
 
 function buildUnitOptions(selectedUnit) {
     const curr = (selectedUnit || "Piece").trim();
     const units = [...DEFAULT_UNITS];
-    if (curr && !units.some(u => u.toLowerCase() === curr.toLowerCase())) {
-        units.unshift(curr);
-    }
+    if (curr && !units.some(u => u.toLowerCase() === curr.toLowerCase())) units.unshift(curr);
     let html = units.map(u => {
         const sel = u.toLowerCase() === curr.toLowerCase() ? "selected" : "";
         return `<option value="${esc(u)}" ${sel}>${esc(u)}</option>`;
@@ -84,8 +85,11 @@ async function apiPost(payload) {
     return await res.json();
 }
 
-if (sessionStorage.getItem("user")) {
-    USER = JSON.parse(sessionStorage.getItem("user"));
+// Shared localStorage login so Stock Register opens authenticated in a new tab
+const savedUser = localStorage.getItem("labPortalUser") || sessionStorage.getItem("user");
+if (savedUser) {
+    USER = JSON.parse(savedUser);
+    localStorage.setItem("labPortalUser", JSON.stringify(USER));
     showApp();
 }
 
@@ -103,6 +107,7 @@ async function verifyLogin() {
         const data = await apiPost({ action: "login", username: u, password: p });
         if (data.status === "success") {
             USER = { username: u, role: data.role };
+            localStorage.setItem("labPortalUser", JSON.stringify(USER));
             sessionStorage.setItem("user", JSON.stringify(USER));
             showApp();
         } else {
@@ -119,6 +124,7 @@ async function verifyLogin() {
 }
 
 function logout() {
+    localStorage.removeItem("labPortalUser");
     sessionStorage.removeItem("user");
     location.reload();
 }
@@ -137,14 +143,25 @@ function showApp() {
     fetchInitData();
 }
 
+function getCurrentListMeta() {
+    const val = document.getElementById('listSelector').value;
+    return activeLists.find(l => l.name === val) || null;
+}
+
+function isCurrentListClosed() {
+    const meta = getCurrentListMeta();
+    return meta && meta.status === "Closed";
+}
+
 async function fetchInitData() {
     try {
         const data = await apiPost({ action: "getInit", username: USER.username, role: USER.role });
         if (data.status === "success") {
-            productDB = data.products;
-            activeLists = data.lists;
-            vendorDB = data.vendors;
-            latestInheritedBudget = data.latestBudget;
+            productDB = data.products || {};
+            activeLists = data.lists || [];
+            vendorDB = data.vendors || [];
+            latestInheritedBudget = data.latestBudget || 0;
+            globalAlerts = data.alerts || { unacquired: [], lowStock: [] };
             populateListDropdown();
         }
     } catch (e) {
@@ -155,7 +172,10 @@ async function fetchInitData() {
 function populateListDropdown() {
     const sel = document.getElementById('listSelector');
     sel.innerHTML = '<option value="" disabled selected>Select a List...</option>';
-    activeLists.forEach(l => { sel.innerHTML += `<option value="${esc(l.name)}">${esc(l.name)}</option>`; });
+    activeLists.forEach(l => {
+        const label = l.status === "Closed" ? `${l.name} [Closed]` : l.name;
+        sel.innerHTML += `<option value="${esc(l.name)}">${esc(label)}</option>`;
+    });
     sel.innerHTML += `<option value="_NEW_" class="text-primary fw-bold">+ Create New List</option>`;
 
     const curr = sel.getAttribute('data-curr');
@@ -176,21 +196,28 @@ async function handleListChange() {
         const today = new Date().toISOString().split('T')[0];
         let newName = prompt("Enter new list name:", today);
         if (newName) {
-            await apiPost({
+            const res = await apiPost({
                 action: "manageList", subAction: "create",
                 listName: newName, username: USER.username, inheritedBudget: latestInheritedBudget
             });
+            if (res.status === "error") return alert(res.message);
             document.getElementById('listSelector').setAttribute('data-curr', newName);
-            fetchInitData();
+            await fetchInitData();
+            // Prompt alerts automatically on newly created list if any exist
+            const activeAlerts = getRelevantAlertsForCurrentList();
+            if (activeAlerts.unacquired.length > 0 || activeAlerts.lowStock.length > 0) {
+                openAlertsModal();
+            }
         } else {
             document.getElementById('listSelector').value = activeLists[0] ? activeLists[0].name : "";
         }
         return;
     }
 
-    document.getElementById('tableBody').innerHTML = '<tr><td colspan="20" class="text-center">Loading...</td></tr>';
-    const listMeta = activeLists.find(l => l.name === val);
+    document.getElementById('tableBody').innerHTML = '<tr><td colspan="22" class="text-center">Loading...</td></tr>';
+    const listMeta = getCurrentListMeta();
     if (listMeta) document.getElementById('budgetInHand').value = listMeta.budget;
+    updateClosedUI();
 
     try {
         const payload = await apiPost({ action: "getListData", listName: val });
@@ -199,19 +226,226 @@ async function handleListChange() {
             activeVendors = [];
         } else {
             let fetchedHeaders = payload.headers || BASE_HEADERS;
-            let finalPriceIdx = fetchedHeaders.indexOf("Total Estimate");
-            activeVendors = (finalPriceIdx > -1 && finalPriceIdx < fetchedHeaders.length - 1)
-                ? fetchedHeaders.slice(finalPriceIdx + 1)
-                : [];
+            activeVendors = fetchedHeaders.filter(h => !BASE_HEADERS.includes(h));
             currentListData = payload.rows || [];
         }
         currentListData.forEach(r => { r._isEditing = false; });
         renderTable();
+        updateAlertBadge();
     } catch (e) {
-        document.getElementById('tableBody').innerHTML = '<tr><td colspan="20" class="text-danger text-center">Load failed.</td></tr>';
+        document.getElementById('tableBody').innerHTML = '<tr><td colspan="22" class="text-danger text-center">Load failed.</td></tr>';
     }
 }
 
+function updateClosedUI() {
+    const closed = isCurrentListClosed();
+    document.getElementById('listStatusBadge').style.display = closed ? 'inline-block' : 'none';
+    document.getElementById('btnAddRow').disabled = closed;
+    document.getElementById('btnAddVendor').disabled = closed;
+    document.getElementById('btnOptimize').disabled = closed;
+    document.getElementById('btnSaveEdits').disabled = closed;
+    document.getElementById('btnCloseList').style.display = closed ? 'none' : 'inline-block';
+    document.getElementById('btnReopenList').style.display = (closed && (USER.role === "Admin" || USER.role === "Lab Supervisor")) ? 'inline-block' : 'none';
+}
+
+// -------------------------------------------------------------
+// ALERTS ENGINE (Unacquired Shortfalls + Low Stock Items)
+// -------------------------------------------------------------
+function getRelevantAlertsForCurrentList() {
+    const currList = document.getElementById('listSelector').value;
+    const meta = getCurrentListMeta();
+    const dismissed = (meta && meta.dismissedAlerts) ? meta.dismissedAlerts : [];
+
+    // Exclude items from the current list itself, or already dismissed in this list
+    const unacquired = (globalAlerts.unacquired || []).filter(a =>
+        a.sourceList !== currList && !dismissed.includes(a.alertKey)
+    );
+    // Show low stock items that are not yet marked PLACED and not dismissed in this list
+    const lowStock = (globalAlerts.lowStock || []).filter(a =>
+        a.reqStatus !== "PLACED" && !dismissed.includes(a.alertKey)
+    );
+    return { unacquired, lowStock };
+}
+
+function updateAlertBadge() {
+    const btn = document.getElementById('btnListAlerts');
+    if (isCurrentListClosed()) {
+        btn.style.display = 'none';
+        return;
+    }
+    const { unacquired, lowStock } = getRelevantAlertsForCurrentList();
+    const totalCount = unacquired.length + lowStock.length;
+    if (totalCount > 0) {
+        document.getElementById('alertCount').innerText = totalCount;
+        btn.style.display = 'inline-block';
+    } else {
+        btn.style.display = 'none';
+    }
+}
+
+function openAlertsModal() {
+    renderAlertsModal();
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('alertsModal')).show();
+}
+
+function renderAlertsModal() {
+    const tbody = document.getElementById('alertsBody');
+    const { unacquired, lowStock } = getRelevantAlertsForCurrentList();
+    let html = "";
+
+    unacquired.forEach((a, idx) => {
+        const inputId = `alertUnacqQty_${idx}`;
+        html += `<tr class="alert-row-unacq">
+            <td><span class="badge bg-danger">Unacquired</span></td>
+            <td>
+                <div class="fw-bold">${esc(a.item)}</div>
+                <div class="small text-muted">${esc(a.specs)}</div>
+            </td>
+            <td class="small">
+                From list: <strong>${esc(a.sourceList)}</strong><br>
+                Req: ${a.reqQty} | Acq: ${a.acqQty} | <span class="text-danger fw-bold">Pending: ${a.shortfall}</span>
+            </td>
+            <td class="small">${esc(a.unit)}${a.subQty ? `<br><span class="text-muted">${esc(a.subQty)}</span>` : ''}</td>
+            <td><input type="number" id="${inputId}" class="form-control form-control-sm" min="1" value="${a.shortfall}"></td>
+            <td class="text-center text-nowrap">
+                <button class="btn btn-sm btn-success py-0 px-2" onclick="addAlertItemToList('unacq', ${idx})"><i class="bi bi-plus-circle"></i> Add</button>
+                <button class="btn btn-sm btn-outline-secondary py-0 px-2 ms-1" onclick="dismissAlertItem('${esc(a.alertKey)}')">Ignore</button>
+            </td>
+        </tr>`;
+    });
+
+    lowStock.forEach((a, idx) => {
+        const inputId = `alertLowQty_${idx}`;
+        const remText = a.subPerUnit > 1 ? `${a.totalBase} ${a.subLabel || 'pcs'}` : `${a.totalBase} ${a.unit}`;
+        html += `<tr class="alert-row-lowstk">
+            <td><span class="badge bg-warning text-dark">Low Stock</span></td>
+            <td>
+                <div class="fw-bold">${esc(a.item)}</div>
+                <div class="small text-muted">${esc(a.specs)}</div>
+            </td>
+            <td class="small">
+                Stock: <strong class="text-danger">${esc(remText)}</strong> | Threshold: <strong>${a.threshold}</strong><br>
+                Prev Acquired Qty: ${a.prevAcqQty}
+            </td>
+            <td class="small">${esc(a.unit)}${a.subQty ? `<br><span class="text-muted">${esc(a.subQty)}</span>` : ''}</td>
+            <td><input type="number" id="${inputId}" class="form-control form-control-sm" min="1" value="${a.prevAcqQty || 1}"></td>
+            <td class="text-center text-nowrap">
+                <button class="btn btn-sm btn-primary py-0 px-2" onclick="addAlertItemToList('lowstk', ${idx})"><i class="bi bi-plus-circle"></i> Add</button>
+                <button class="btn btn-sm btn-outline-secondary py-0 px-2 ms-1" onclick="dismissAlertItem('${esc(a.alertKey)}')">Ignore</button>
+            </td>
+        </tr>`;
+    });
+
+    if (!html) {
+        html = `<tr><td colspan="6" class="text-center text-muted p-4">No pending alerts for this list.</td></tr>`;
+    }
+    tbody.innerHTML = html;
+}
+
+async function addAlertItemToList(type, idx) {
+    if (isCurrentListClosed()) return alert("This list is closed.");
+    const { unacquired, lowStock } = getRelevantAlertsForCurrentList();
+    const item = type === 'unacq' ? unacquired[idx] : lowStock[idx];
+    if (!item) return;
+
+    const qtyInput = document.getElementById(type === 'unacq' ? `alertUnacqQty_${idx}` : `alertLowQty_${idx}`);
+    const qtyToAdd = parseFloat(qtyInput.value) || 1;
+
+    // Check if the same Item + Specs already exists in this list -> increase quantity
+    const existingIdx = currentListData.findIndex(r =>
+        !r._isEditing &&
+        String(r['Item'] || '').trim().toLowerCase() === item.item.trim().toLowerCase() &&
+        String(r['Item Specs'] || '').trim().toLowerCase() === item.specs.trim().toLowerCase()
+    );
+
+    if (existingIdx > -1) {
+        const curQty = parseFloat(currentListData[existingIdx]['Required Quantity']) || 0;
+        currentListData[existingIdx]['Required Quantity'] = curQty + qtyToAdd;
+    } else {
+        let newRow = {
+            'Item': item.item,
+            'Item Specs': item.specs || '',
+            'Reference Link': item.refLink || '',
+            'Preferred Company': item.prefComp || 'Any',
+            'Product Code': item.code || '',
+            'Required Quantity': qtyToAdd,
+            'Unit': item.unit || 'Piece',
+            'Sub Quantity': isPieceUnit(item.unit) ? '' : (item.subQty || ''),
+            'Acquired Qty': 0,
+            'Acquired Sub Qty': '',
+            'Estimated Price': item.estPrice || '',
+            'Selected Vendor': '',
+            'Total Estimate': '',
+            'Bill Ref No': '',
+            'Date of Procurement': '',
+            _isEditing: false
+        };
+        activeVendors.forEach(v => newRow[v] = "");
+        currentListData.push(newRow);
+    }
+
+    // Dismiss alert on current list so it doesn't show twice
+    await apiPost({
+        action: "manageList", subAction: "dismissAlert",
+        listName: document.getElementById('listSelector').value,
+        alertKey: item.alertKey
+    });
+
+    // If low-stock item, mark PLACED in Stock Register
+    if (type === 'lowstk' && item.stockId) {
+        await apiPost({ action: "markStockReqPlaced", stockId: item.stockId });
+    }
+
+    await syncTableToBackend();
+    renderAlertsModal();
+    updateAlertBadge();
+}
+
+async function dismissAlertItem(alertKey) {
+    const lName = document.getElementById('listSelector').value;
+    await apiPost({ action: "manageList", subAction: "dismissAlert", listName: lName, alertKey: alertKey });
+    const meta = getCurrentListMeta();
+    if (meta) {
+        if (!meta.dismissedAlerts) meta.dismissedAlerts = [];
+        meta.dismissedAlerts.push(alertKey);
+    }
+    renderAlertsModal();
+    updateAlertBadge();
+}
+
+// -------------------------------------------------------------
+// CLOSE / REOPEN REQUIREMENT LIST
+// -------------------------------------------------------------
+async function closeCurrentList() {
+    const lName = document.getElementById('listSelector').value;
+    if (!lName) return;
+
+    const cleanRows = currentListData.filter(r => !r._isEditing);
+    const pending = cleanRows.filter(r => (parseFloat(r['Acquired Qty']) || 0) < (parseFloat(r['Required Quantity']) || 0));
+
+    if (pending.length > 0) {
+        const names = pending.slice(0, 6).map(r => `• ${r['Item']} (Req: ${r['Required Quantity']}, Acq: ${r['Acquired Qty'] || 0})`).join('\n');
+        const msg = `${pending.length} item(s) are not yet fully acquired:\n\n${names}${pending.length > 6 ? '\n...' : ''}\n\nIf you close this list now, these unacquired items will automatically be flagged for inheritance into the next list you create.\n\nProceed to close "${lName}"?`;
+        if (!confirm(msg)) return;
+    } else {
+        if (!confirm(`All items in "${lName}" are acquired. Close this requirement list now?`)) return;
+    }
+
+    await apiPost({ action: "manageList", subAction: "close", listName: lName });
+    await fetchInitData();
+}
+
+async function reopenCurrentList() {
+    const lName = document.getElementById('listSelector').value;
+    if (!lName) return;
+    if (!confirm(`Reopen list "${lName}" for editing?`)) return;
+    await apiPost({ action: "manageList", subAction: "reopen", listName: lName });
+    await fetchInitData();
+}
+
+// -------------------------------------------------------------
+// MAIN TABLE RENDERING
+// -------------------------------------------------------------
 function toggleCode(elem) {
     const tr = elem.closest('tr');
     const codeInput = tr.querySelector('.pCode');
@@ -225,6 +459,7 @@ function toggleCode(elem) {
 }
 
 function renderTable() {
+    const closed = isCurrentListClosed();
     const thead = document.getElementById('tableHead');
     let vendorHeaders = activeVendors.map(v => `<th class="text-info">${esc(v)}</th>`).join('');
     thead.innerHTML = `<tr>
@@ -237,24 +472,35 @@ function renderTable() {
         <th>Req Qty</th>
         <th>Unit</th>
         <th>Sub Qty / Pack</th>
+        <th class="text-warning">Acq Qty</th>
+        <th class="text-warning">Acq Sub Qty</th>
         <th>Est Price</th>
         <th>Selected Vendor</th>
         <th class="text-success">Total Estimate</th>
+        <th>Bill Ref No</th>
+        <th>Proc. Date</th>
         ${vendorHeaders}
     </tr>`;
 
     const tbody = document.getElementById('tableBody');
     let rowsHTML = "";
     let total = 0;
+    let acquiredCount = 0;
+    let savedCount = 0;
 
     currentListData.forEach((row, i) => {
+        const reqQty = parseFloat(row['Required Quantity']) || 0;
+        const acqQty = parseFloat(row['Acquired Qty']) || 0;
         const totalEst = parseFloat(row['Total Estimate']) || 0;
         const unitVal = row['Unit'] || 'Piece';
         const pieceFlag = isPieceUnit(unitVal);
 
         if (!row._isEditing) {
+            savedCount++;
+            if (reqQty > 0 && acqQty >= reqQty) acquiredCount++;
             total += totalEst;
             let selVendor = row['Selected Vendor'] || '';
+            let acqBadgeClass = acqQty >= reqQty && reqQty > 0 ? 'text-success fw-bold' : (acqQty > 0 ? 'text-warning fw-bold' : 'text-muted');
 
             let vendorCells = activeVendors.map(v => {
                 let vPrice = row[v] ?? '';
@@ -264,9 +510,9 @@ function renderTable() {
                 let safeV = v.replace(/'/g, "\\'");
                 return `<td class="vendor-cell">
                     <div class="d-flex align-items-center gap-1">
-                        <input type="radio" name="vSelect_${i}" value="${esc(v)}" onchange="selectVendor(${i}, '${safeV}')" ${isChecked} ${isNA ? 'disabled' : ''}>
-                        <input type="number" step="0.01" class="form-control form-control-sm" style="width: 75px;" placeholder="Price" value="${esc(valToDisplay)}" onchange="updateVendorPrice(${i}, '${safeV}', this.value)" ${isNA ? 'disabled' : ''}>
-                        <button class="btn btn-sm btn-outline-danger py-0 px-1 fw-bold" onclick="toggleVendorNA(${i}, '${safeV}')" title="Mark NA">🚫</button>
+                        <input type="radio" name="vSelect_${i}" value="${esc(v)}" onchange="selectVendor(${i}, '${safeV}')" ${isChecked} ${(isNA || closed) ? 'disabled' : ''}>
+                        <input type="number" step="0.01" class="form-control form-control-sm" style="width: 75px;" placeholder="Price" value="${esc(valToDisplay)}" onchange="updateVendorPrice(${i}, '${safeV}', this.value)" ${(isNA || closed) ? 'disabled' : ''}>
+                        <button class="btn btn-sm btn-outline-danger py-0 px-1 fw-bold" onclick="toggleVendorNA(${i}, '${safeV}')" title="Mark NA" ${closed ? 'disabled' : ''}>🚫</button>
                     </div>
                 </td>`;
             }).join('');
@@ -274,9 +520,9 @@ function renderTable() {
             rowsHTML += `<tr>
                 <td class="sticky-col-0">${i + 1}</td>
                 <td class="sticky-col-1 text-center text-nowrap">
-                    <button class="btn btn-sm btn-outline-primary py-0 px-1" onclick="editRow(${i})" title="Edit"><i class="bi bi-pencil-square"></i></button>
-                    <button class="btn btn-sm btn-outline-secondary py-0 px-1 ms-1" onclick="duplicateRow(${i})" title="Duplicate Row"><i class="bi bi-copy"></i></button>
-                    <button class="btn btn-sm btn-outline-danger py-0 px-1 ms-1" onclick="deleteRow(${i})" title="Delete"><i class="bi bi-trash"></i></button>
+                    <button class="btn btn-sm btn-outline-primary py-0 px-1" onclick="editRow(${i})" title="Edit" ${closed ? 'disabled' : ''}><i class="bi bi-pencil-square"></i></button>
+                    <button class="btn btn-sm btn-outline-secondary py-0 px-1 ms-1" onclick="duplicateRow(${i})" title="Duplicate Row" ${closed ? 'disabled' : ''}><i class="bi bi-copy"></i></button>
+                    <button class="btn btn-sm btn-outline-danger py-0 px-1 ms-1" onclick="deleteRow(${i})" title="Delete" ${closed ? 'disabled' : ''}><i class="bi bi-trash"></i></button>
                 </td>
                 <td class="sticky-col-2 fw-bold">${esc(row['Item'])}</td>
                 <td class="sticky-col-3 specs-col text-wrap">
@@ -286,9 +532,9 @@ function renderTable() {
                 <td>${esc(row['Preferred Company'])}</td>
                 <td>${esc(row['Product Code'])}</td>
 
-                <td><input type="number" class="form-control form-control-sm number-box" value="${esc(row['Required Quantity'])}" min="1" onchange="updateLiveRow(${i}, 'Required Quantity', this.value)"></td>
+                <td><input type="number" class="form-control form-control-sm number-box" value="${esc(row['Required Quantity'])}" min="1" onchange="updateLiveRow(${i}, 'Required Quantity', this.value)" ${closed ? 'disabled' : ''}></td>
                 <td>
-                    <select class="form-select form-select-sm number-box" onchange="updateLiveUnit(${i}, this)">
+                    <select class="form-select form-select-sm number-box" onchange="updateLiveUnit(${i}, this)" ${closed ? 'disabled' : ''}>
                         ${buildUnitOptions(unitVal)}
                     </select>
                 </td>
@@ -297,12 +543,16 @@ function renderTable() {
                            value="${pieceFlag ? '' : esc(row['Sub Quantity'])}"
                            placeholder="${pieceFlag ? '-' : 'e.g. 100 pcs'}"
                            onchange="updateLiveRow(${i}, 'Sub Quantity', this.value)"
-                           ${pieceFlag ? 'disabled' : ''}>
+                           ${(pieceFlag || closed) ? 'disabled' : ''}>
                 </td>
-                <td><input type="number" step="0.01" class="form-control form-control-sm number-box" value="${esc(row['Estimated Price'])}" onchange="updateLiveRow(${i}, 'Estimated Price', this.value)"></td>
+                <td class="text-center ${acqBadgeClass}">${acqQty || 0}</td>
+                <td class="text-center small text-muted">${esc(row['Acquired Sub Qty'] || '-')}</td>
+                <td><input type="number" step="0.01" class="form-control form-control-sm number-box" value="${esc(row['Estimated Price'])}" onchange="updateLiveRow(${i}, 'Estimated Price', this.value)" ${closed ? 'disabled' : ''}></td>
 
                 <td class="fw-bold text-primary">${esc(selVendor)}</td>
                 <td class="fw-bold text-success" id="rowTotal_${i}">₹${totalEst.toFixed(2)}</td>
+                <td class="small text-nowrap">${esc(row['Bill Ref No'] || '-')}</td>
+                <td class="small text-nowrap">${esc(row['Date of Procurement'] || '-')}</td>
                 ${vendorCells}
             </tr>`;
         } else {
@@ -335,8 +585,10 @@ function renderTable() {
                            placeholder="${pieceFlag ? '-' : 'e.g. 100 pcs'}"
                            ${pieceFlag ? 'disabled' : ''}>
                 </td>
+                <td class="text-center text-muted small">${acqQty || 0}</td>
+                <td class="text-center text-muted small">${esc(row['Acquired Sub Qty'] || '-')}</td>
                 <td><input type="number" step="0.01" class="form-control form-control-sm pEstPrice number-box" value="${esc(row['Estimated Price'])}"></td>
-                <td colspan="2" class="text-muted small text-center">Save row first</td>
+                <td colspan="4" class="text-muted small text-center">Save row first</td>
                 ${blankVendorCells}
             </tr>`;
         }
@@ -344,6 +596,9 @@ function renderTable() {
 
     tbody.innerHTML = rowsHTML;
     document.getElementById('totalBudget').innerText = '₹' + total.toFixed(2);
+    document.getElementById('listProgressSummary').innerText = savedCount > 0
+        ? `Procurement Progress: ${acquiredCount} / ${savedCount} item(s) fully acquired`
+        : '';
     calcBalance();
 }
 
@@ -399,19 +654,13 @@ function updateLiveRow(i, field, val) {
 function updateLiveUnit(i, sel) {
     if (sel.value === "_NEW_") {
         const u = prompt("Enter new unit type (e.g. Bottle, Vial, Pack):");
-        if (u && u.trim()) {
-            currentListData[i]['Unit'] = u.trim();
-        } else {
-            sel.value = currentListData[i]['Unit'] || 'Piece';
-            return;
-        }
+        if (u && u.trim()) currentListData[i]['Unit'] = u.trim();
+        else { sel.value = currentListData[i]['Unit'] || 'Piece'; return; }
     } else {
         currentListData[i]['Unit'] = sel.value;
     }
 
-    if (isPieceUnit(currentListData[i]['Unit'])) {
-        currentListData[i]['Sub Quantity'] = '';
-    }
+    if (isPieceUnit(currentListData[i]['Unit'])) currentListData[i]['Sub Quantity'] = '';
     renderTable();
 
     if (!isPieceUnit(currentListData[i]['Unit'])) {
@@ -528,7 +777,12 @@ function optimizeVendors() {
 }
 
 function addNewRow() {
-    let newRow = { _isEditing: true, _isNew: true, 'Reference Link': '', 'Required Quantity': 1, 'Unit': 'Piece', 'Sub Quantity': '' };
+    if (isCurrentListClosed()) return;
+    let newRow = {
+        _isEditing: true, _isNew: true, 'Reference Link': '',
+        'Required Quantity': 1, 'Unit': 'Piece', 'Sub Quantity': '',
+        'Acquired Qty': 0, 'Acquired Sub Qty': '', 'Bill Ref No': '', 'Date of Procurement': ''
+    };
     activeVendors.forEach(v => newRow[v] = "");
     currentListData.push(newRow);
     renderTable();
@@ -537,11 +791,16 @@ function addNewRow() {
 }
 
 function duplicateRow(i) {
+    if (isCurrentListClosed()) return;
     let clonedRow = JSON.parse(JSON.stringify(currentListData[i]));
     clonedRow._isEditing = true;
     clonedRow._isNew = true;
     clonedRow['Selected Vendor'] = '';
     clonedRow['Total Estimate'] = '';
+    clonedRow['Acquired Qty'] = 0;
+    clonedRow['Acquired Sub Qty'] = '';
+    clonedRow['Bill Ref No'] = '';
+    clonedRow['Date of Procurement'] = '';
     activeVendors.forEach(v => clonedRow[v] = '');
     delete clonedRow._origState;
 
@@ -550,6 +809,7 @@ function duplicateRow(i) {
 }
 
 function editRow(i) {
+    if (isCurrentListClosed()) return;
     currentListData[i]._isEditing = true;
     currentListData[i]._origState = { ...currentListData[i] };
     renderTable();
@@ -565,6 +825,7 @@ function cancelRow(i) {
 }
 
 async function deleteRow(i) {
+    if (isCurrentListClosed()) return;
     if (confirm("Delete this item from the list?")) {
         currentListData.splice(i, 1);
         await syncTableToBackend();
@@ -595,8 +856,12 @@ async function saveRow(i) {
         'Required Quantity': qty,
         'Unit': unitVal,
         'Sub Quantity': subQtyVal,
+        'Acquired Qty': orig['Acquired Qty'] || 0,
+        'Acquired Sub Qty': orig['Acquired Sub Qty'] || '',
         'Estimated Price': tr.querySelector('.pEstPrice').value,
         'Selected Vendor': sv,
+        'Bill Ref No': orig['Bill Ref No'] || '',
+        'Date of Procurement': orig['Date of Procurement'] || '',
         _isEditing: false
     };
 
@@ -619,6 +884,7 @@ async function saveRow(i) {
 }
 
 async function saveTableEdits() {
+    if (isCurrentListClosed()) return;
     const btn = document.getElementById('btnSaveEdits');
     btn.innerHTML = `<i class="bi bi-hourglass-split"></i> Saving...`;
     btn.disabled = true;
@@ -638,9 +904,12 @@ async function syncTableToBackend() {
             tableData: cleanData
         });
         const initRes = await apiPost({ action: "getInit", username: USER.username, role: USER.role });
-        productDB = initRes.products;
-        vendorDB = initRes.vendors;
+        productDB = initRes.products || productDB;
+        vendorDB = initRes.vendors || vendorDB;
+        activeLists = initRes.lists || activeLists;
+        globalAlerts = initRes.alerts || globalAlerts;
         renderTable();
+        updateAlertBadge();
     } catch (e) {
         alert("Failed to sync list.");
         renderTable();
@@ -712,7 +981,7 @@ async function saveListSettings() {
 }
 
 // -------------------------------------------------------------
-// VIRTUALIZED INVENTORY SYSTEM WITH SMART MULTI-KEYWORD SEARCH
+// VIRTUALIZED INVENTORY DB MODAL
 // -------------------------------------------------------------
 let inventorySearchTerm = "";
 
@@ -775,6 +1044,7 @@ function renderInventoryTable() {
 }
 
 function addFromInventory(dbId) {
+    if (isCurrentListClosed()) return alert("Current list is closed. Select or create an open list.");
     const p = productDB[dbId];
     if (!p) return;
     let newRow = {
@@ -786,9 +1056,13 @@ function addFromInventory(dbId) {
         'Required Quantity': 1,
         'Unit': p.unit || 'Piece',
         'Sub Quantity': isPieceUnit(p.unit) ? '' : (p.subQty || ''),
+        'Acquired Qty': 0,
+        'Acquired Sub Qty': '',
         'Estimated Price': p.estPrice || '',
         'Selected Vendor': '',
         'Total Estimate': '',
+        'Bill Ref No': '',
+        'Date of Procurement': '',
         _isEditing: true,
         _isNew: true
     };
@@ -821,23 +1095,15 @@ function openEditProduct(dbId) {
 function toggleModalCode() {
     const comp = document.getElementById('editComp').value.trim().toLowerCase();
     const cBox = document.getElementById('editCode');
-    if (comp === 'any' || comp === '') {
-        cBox.value = '';
-        cBox.disabled = true;
-    } else {
-        cBox.disabled = false;
-    }
+    if (comp === 'any' || comp === '') { cBox.value = ''; cBox.disabled = true; }
+    else cBox.disabled = false;
 }
 
 function toggleModalSubQty() {
     const uVal = document.getElementById('editUnit').value;
     const sqBox = document.getElementById('editSubQty');
-    if (isPieceUnit(uVal)) {
-        sqBox.value = '';
-        sqBox.disabled = true;
-    } else {
-        sqBox.disabled = false;
-    }
+    if (isPieceUnit(uVal)) { sqBox.value = ''; sqBox.disabled = true; }
+    else sqBox.disabled = false;
 }
 
 async function submitProductEdit() {
@@ -846,7 +1112,7 @@ async function submitProductEdit() {
     btn.disabled = true;
 
     const unitVal = document.getElementById('editUnit').value.trim() || 'Piece';
-    const payload = {
+    await apiPost({
         action: "updateProduct",
         role: USER.role,
         product: {
@@ -860,8 +1126,7 @@ async function submitProductEdit() {
             subQty: isPieceUnit(unitVal) ? '' : document.getElementById('editSubQty').value.trim(),
             estPrice: document.getElementById('editPrice').value
         }
-    };
-    await apiPost(payload);
+    });
     await fetchInitData();
     bootstrap.Modal.getInstance(document.getElementById('fullEditModal')).hide();
     renderInventoryTable();
@@ -905,12 +1170,8 @@ document.getElementById('addUserForm').addEventListener('submit', async function
         newPass: document.getElementById('newUPass').value.trim(),
         newRole: document.getElementById('newURole').value
     });
-    if (res.status === "success") {
-        e.target.reset();
-        openUsersModal();
-    } else {
-        alert(res.message);
-    }
+    if (res.status === "success") { e.target.reset(); openUsersModal(); }
+    else alert(res.message);
 });
 
 async function deleteUser(username) {
@@ -921,7 +1182,7 @@ async function deleteUser(username) {
 }
 
 // -------------------------------------------------------------
-// EXPORT MODULE (Master List, RFQ, Individual & Batch Vendors)
+// EXPORT MODULE
 // -------------------------------------------------------------
 function openExportModal(type) {
     currentExportType = type;
@@ -956,7 +1217,6 @@ function renderExportCheckboxes() {
     let uncheckedByDefault = [];
 
     if (mode === "ALL") {
-        // Reference Link is controlled by the dedicated ON/OFF switch (rendered below Item Specs)
         colsToOffer = BASE_HEADERS.filter(h => h !== "Reference Link").concat(activeVendors);
         if (budgetChk) budgetChk.checked = true;
     } else if (mode === "RFQ") {
@@ -1014,50 +1274,22 @@ function executeExport() {
     let exportJobs = [];
 
     if (mode === "ALL") {
-        exportJobs.push({
-            title: `Dr. Nimmi Das Lab - ${baseListName}`,
-            sheetName: "Master List",
-            fileName: baseListName,
-            rows: buildRows(cleanRows),
-            vendorTotal: null
-        });
+        exportJobs.push({ title: `Dr. Nimmi Das Lab - ${baseListName}`, sheetName: "Master List", fileName: baseListName, rows: buildRows(cleanRows), vendorTotal: null });
     } else if (mode === "RFQ") {
-        exportJobs.push({
-            title: `Dr. Nimmi Das Lab - Requirement List (RFQ) - ${baseListName}`,
-            sheetName: "Requirement List",
-            fileName: `${baseListName}_Requirement_List`,
-            rows: buildRows(cleanRows),
-            vendorTotal: null
-        });
+        exportJobs.push({ title: `Dr. Nimmi Das Lab - Requirement List (RFQ) - ${baseListName}`, sheetName: "Requirement List", fileName: `${baseListName}_Requirement_List`, rows: buildRows(cleanRows), vendorTotal: null });
     } else if (mode === "ALL_VENDORS") {
         const concernedVendors = activeVendors.filter(v => cleanRows.some(r => r['Selected Vendor'] === v));
-        if (concernedVendors.length === 0) {
-            return alert("No items have been assigned to any vendor yet. Select vendors or run 'Optimize Plan' first.");
-        }
+        if (concernedVendors.length === 0) return alert("No items assigned to any vendor yet.");
         concernedVendors.forEach(v => {
             const vRows = cleanRows.filter(r => r['Selected Vendor'] === v);
             const vTotal = vRows.reduce((sum, r) => sum + (parseFloat(r['Total Estimate']) || 0), 0);
-            exportJobs.push({
-                title: `Dr. Nimmi Das Lab - ${baseListName} | Vendor: ${v}`,
-                sheetName: v,
-                fileName: `${baseListName}_${v}`,
-                rows: buildRows(vRows, v),
-                vendorTotal: vTotal
-            });
+            exportJobs.push({ title: `Dr. Nimmi Das Lab - ${baseListName} | Vendor: ${v}`, sheetName: v, fileName: `${baseListName}_${v}`, rows: buildRows(vRows, v), vendorTotal: vTotal });
         });
     } else {
         const vRows = cleanRows.filter(r => r['Selected Vendor'] === mode);
-        if (vRows.length === 0) {
-            return alert(`No items are currently assigned to "${mode}".`);
-        }
+        if (vRows.length === 0) return alert(`No items are currently assigned to "${mode}".`);
         const vTotal = vRows.reduce((sum, r) => sum + (parseFloat(r['Total Estimate']) || 0), 0);
-        exportJobs.push({
-            title: `Dr. Nimmi Das Lab - ${baseListName} | Vendor: ${mode}`,
-            sheetName: mode,
-            fileName: `${baseListName}_${mode}`,
-            rows: buildRows(vRows, mode),
-            vendorTotal: vTotal
-        });
+        exportJobs.push({ title: `Dr. Nimmi Das Lab - ${baseListName} | Vendor: ${mode}`, sheetName: mode, fileName: `${baseListName}_${mode}`, rows: buildRows(vRows, mode), vendorTotal: vTotal });
     }
 
     function buildSheetAOA(job) {
@@ -1076,13 +1308,9 @@ function executeExport() {
             }));
         });
 
-        if (job.vendorTotal !== null) {
-            aoa.push([]);
-            aoa.push(["Vendor Total Estimate:", `Rs. ${job.vendorTotal.toFixed(2)}`]);
-        }
+        if (job.vendorTotal !== null) { aoa.push([]); aoa.push(["Vendor Total Estimate:", `Rs. ${job.vendorTotal.toFixed(2)}`]); }
         if (includeBudget) {
-            aoa.push([]);
-            aoa.push(["BUDGET SUMMARY"]);
+            aoa.push([]); aoa.push(["BUDGET SUMMARY"]);
             aoa.push(["Total Budget Allocated:", `Rs. ${budgetAllocated.toFixed(2)}`]);
             aoa.push(["Total Used:", `Rs. ${totalUsed.toFixed(2)}`]);
             aoa.push(["Total Remaining:", `Rs. ${totalRemaining.toFixed(2)}`]);
@@ -1097,14 +1325,11 @@ function executeExport() {
             const ws = XLSX.utils.aoa_to_sheet(buildSheetAOA(job));
             let safeName = job.sheetName.replace(/[:\\/?*\[\]]/g, '').trim().substring(0, 31) || "Sheet";
             let counter = 1;
-            while (usedNames.has(safeName)) {
-                safeName = safeName.substring(0, 28) + `_${counter++}`;
-            }
+            while (usedNames.has(safeName)) safeName = safeName.substring(0, 28) + `_${counter++}`;
             usedNames.add(safeName);
             XLSX.utils.book_append_sheet(wb, ws, safeName);
         });
-        const outFile = (mode === "ALL_VENDORS") ? `${baseListName}_All_Vendors.xlsx` : `${exportJobs[0].fileName}.xlsx`;
-        XLSX.writeFile(wb, outFile);
+        XLSX.writeFile(wb, (mode === "ALL_VENDORS") ? `${baseListName}_All_Vendors.xlsx` : `${exportJobs[0].fileName}.xlsx`);
     } else if (currentExportType === 'csv') {
         exportJobs.forEach(job => {
             const ws = XLSX.utils.aoa_to_sheet(buildSheetAOA(job));
@@ -1120,10 +1345,7 @@ function executeExport() {
 
         exportJobs.forEach((job, idx) => {
             if (idx > 0) doc.addPage();
-            doc.setFontSize(14);
-            doc.setFont(undefined, 'bold');
-            doc.text(job.title, 14, 15);
-            doc.setFont(undefined, 'normal');
+            doc.setFontSize(14); doc.setFont(undefined, 'bold'); doc.text(job.title, 14, 15); doc.setFont(undefined, 'normal');
 
             let startYPos = 21;
             if (qAddress) {
@@ -1141,11 +1363,7 @@ function executeExport() {
                 didParseCell: function(data) {
                     if (includeRefs && specsColIndex > -1 && data.section === 'body' && data.column.index === specsColIndex) {
                         const ref = job.rows[data.row.index] ? job.rows[data.row.index]._refLink : "";
-                        if (ref) {
-                            // Reserve clean bottom space for one 10pt italic reference line
-                            data.cell.styles.cellPadding = { top: 2, right: 2, bottom: 6.5, left: 2 };
-                            data.cell.styles.minCellHeight = 9;
-                        }
+                        if (ref) { data.cell.styles.cellPadding = { top: 2, right: 2, bottom: 6.5, left: 2 }; data.cell.styles.minCellHeight = 9; }
                     }
                 },
                 didDrawCell: function(data) {
@@ -1153,23 +1371,13 @@ function executeExport() {
                         const ref = job.rows[data.row.index] ? job.rows[data.row.index]._refLink : "";
                         if (ref) {
                             const fullText = `Reference: ${ref}`;
-                            doc.setFont(undefined, 'italic');
-                            doc.setFontSize(10);
-                            doc.setTextColor(70, 70, 70);
-
+                            doc.setFont(undefined, 'italic'); doc.setFontSize(10); doc.setTextColor(70, 70, 70);
                             const maxW = Math.max(12, data.cell.width - 4);
                             const lineText = truncatePdfLine(doc, fullText, maxW);
-                            const textX = data.cell.x + 2;
-                            const textY = data.cell.y + data.cell.height - 2;
-
+                            const textX = data.cell.x + 2, textY = data.cell.y + data.cell.height - 2;
                             doc.text(lineText, textX, textY);
-                            if (isUrl(ref)) {
-                                doc.link(textX, textY - 3.5, doc.getTextWidth(lineText), 4.5, { url: normalizeUrl(ref) });
-                            }
-
-                            doc.setFont(undefined, 'normal');
-                            doc.setFontSize(8);
-                            doc.setTextColor(0, 0, 0);
+                            if (isUrl(ref)) doc.link(textX, textY - 3.5, doc.getTextWidth(lineText), 4.5, { url: normalizeUrl(ref) });
+                            doc.setFont(undefined, 'normal'); doc.setFontSize(8); doc.setTextColor(0, 0, 0);
                         }
                     }
                 }
@@ -1177,24 +1385,17 @@ function executeExport() {
 
             let finalY = doc.lastAutoTable.finalY + 10;
             doc.setFontSize(10);
-
             if (job.vendorTotal !== null) {
-                doc.setFont(undefined, 'bold');
-                doc.text(`Vendor Total Estimate: Rs. ${job.vendorTotal.toFixed(2)}`, 14, finalY);
-                doc.setFont(undefined, 'normal');
-                finalY += 10;
+                doc.setFont(undefined, 'bold'); doc.text(`Vendor Total Estimate: Rs. ${job.vendorTotal.toFixed(2)}`, 14, finalY); doc.setFont(undefined, 'normal'); finalY += 10;
             }
             if (includeBudget) {
-                doc.setFont(undefined, 'bold');
-                doc.text("Budget Summary", 14, finalY);
-                doc.setFont(undefined, 'normal');
+                doc.setFont(undefined, 'bold'); doc.text("Budget Summary", 14, finalY); doc.setFont(undefined, 'normal');
                 doc.text(`Total Budget Allocated: Rs. ${budgetAllocated.toFixed(2)}`, 14, finalY + 6);
                 doc.text(`Total Used: Rs. ${totalUsed.toFixed(2)}`, 14, finalY + 12);
                 doc.text(`Total Remaining: Rs. ${totalRemaining.toFixed(2)}`, 14, finalY + 18);
             }
         });
-        const outFile = (mode === "ALL_VENDORS") ? `${baseListName}_All_Vendors.pdf` : `${exportJobs[0].fileName}.pdf`;
-        doc.save(outFile);
+        doc.save((mode === "ALL_VENDORS") ? `${baseListName}_All_Vendors.pdf` : `${exportJobs[0].fileName}.pdf`);
     } else if (currentExportType === 'print') {
         let win = window.open('', '', 'width=950,height=650');
         let html = `<html><head><title>${esc(baseListName)}</title><style>
@@ -1202,17 +1403,7 @@ function executeExport() {
             table { width: 100%; border-collapse: collapse; margin-top: 10px; }
             th, td { border: 1px solid #000; padding: 6px; font-size: 12px; text-align: left; vertical-align: top; }
             th { background-color: #f2f2f2; }
-            .ref-line {
-                display: block;
-                font-style: italic;
-                font-size: 10pt;
-                color: #333;
-                white-space: nowrap;
-                overflow: hidden;
-                text-overflow: ellipsis;
-                max-width: 260px;
-                margin-top: 3px;
-            }
+            .ref-line { display: block; font-style: italic; font-size: 10pt; color: #333; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 260px; margin-top: 3px; }
             .ref-line a { color: #0d6efd; text-decoration: none; }
             .summary { margin-top: 15px; font-size: 14px; }
             .vendor-page { page-break-after: always; }
@@ -1220,43 +1411,30 @@ function executeExport() {
         </style></head><body>`;
 
         exportJobs.forEach(job => {
-            html += `<div class="vendor-page">`;
-            html += `<h2>${esc(job.title)}</h2>`;
-            if (qAddress) {
-                html += `<p style="font-size:13px;"><strong>Quote / Delivery Address:</strong><br>${esc(qAddress).replace(/\n/g, '<br>')}</p>`;
-            }
+            html += `<div class="vendor-page"><h2>${esc(job.title)}</h2>`;
+            if (qAddress) html += `<p style="font-size:13px;"><strong>Quote / Delivery Address:</strong><br>${esc(qAddress).replace(/\n/g, '<br>')}</p>`;
             html += `<table><thead><tr>${selectedCols.map(c => `<th>${esc(c)}</th>`).join('')}</tr></thead><tbody>`;
             job.rows.forEach(row => {
                 html += `<tr>${selectedCols.map(c => {
-                    if (c === "Item Specs" && includeRefs && row._refLink) {
-                        return `<td><div>${esc(row[c])}</div>${formatRefHtml(row._refLink)}</td>`;
-                    }
+                    if (c === "Item Specs" && includeRefs && row._refLink) return `<td><div>${esc(row[c])}</div>${formatRefHtml(row._refLink)}</td>`;
                     return `<td>${esc(row[c])}</td>`;
                 }).join('')}</tr>`;
             });
             html += `</tbody></table>`;
-
-            if (job.vendorTotal !== null) {
-                html += `<div class="summary"><strong>Vendor Total Estimate: ₹${job.vendorTotal.toFixed(2)}</strong></div>`;
-            }
+            if (job.vendorTotal !== null) html += `<div class="summary"><strong>Vendor Total Estimate: ₹${job.vendorTotal.toFixed(2)}</strong></div>`;
             if (includeBudget) {
-                html += `<div class="summary"><strong>Budget Summary</strong><br>
-                    Total Budget Allocated: ₹${budgetAllocated.toFixed(2)}<br>
-                    Total Used: ₹${totalUsed.toFixed(2)}<br>
-                    Total Remaining: ₹${totalRemaining.toFixed(2)}</div>`;
+                html += `<div class="summary"><strong>Budget Summary</strong><br>Total Budget Allocated: ₹${budgetAllocated.toFixed(2)}<br>Total Used: ₹${totalUsed.toFixed(2)}<br>Total Remaining: ₹${totalRemaining.toFixed(2)}</div>`;
             }
             html += `</div>`;
         });
 
         html += `</body></html>`;
-        win.document.write(html);
-        win.document.close();
-        win.print();
+        win.document.write(html); win.document.close(); win.print();
     }
 }
 
 // -------------------------------------------------------------
-// GLOBAL EVENT LISTENERS (Virtualization & Cascading Dropdowns)
+// GLOBAL EVENT LISTENERS
 // -------------------------------------------------------------
 document.addEventListener('DOMContentLoaded', () => {
     function handleDatalist(e) {
@@ -1268,31 +1446,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const tr = e.target.closest('tr');
         let currentItem = "";
-        if (tr && tr.querySelector('.pItem')) {
-            currentItem = tr.querySelector('.pItem').value.toLowerCase().trim();
-        }
+        if (tr && tr.querySelector('.pItem')) currentItem = tr.querySelector('.pItem').value.toLowerCase().trim();
 
-        let count = 0;
-        let optionsHTML = '';
-        const added = new Set();
-
+        let count = 0; let optionsHTML = ''; const added = new Set();
         for (const [dbId, p] of Object.entries(productDB)) {
             if (count >= 50) break;
             let val = null;
-
-            if (listId === 'itemList' && p.item && p.item.toLowerCase().includes(term)) {
-                val = p.item;
-            } else if (listId === 'specsList' && p.specs && p.specs.toLowerCase().includes(term)) {
+            if (listId === 'itemList' && p.item && p.item.toLowerCase().includes(term)) val = p.item;
+            else if (listId === 'specsList' && p.specs && p.specs.toLowerCase().includes(term)) {
                 if (!currentItem || (p.item && p.item.toLowerCase() === currentItem)) val = p.specs;
             } else if (listId === 'compList' && p.prefComp && p.prefComp.toLowerCase().includes(term)) {
                 if (!currentItem || (p.item && p.item.toLowerCase() === currentItem)) val = p.prefComp;
             }
-
-            if (val && !added.has(val)) {
-                added.add(val);
-                optionsHTML += `<option value="${esc(val)}">`;
-                count++;
-            }
+            if (val && !added.has(val)) { added.add(val); optionsHTML += `<option value="${esc(val)}">`; count++; }
         }
         dataList.innerHTML = optionsHTML;
     }
@@ -1311,12 +1477,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const rows = document.getElementById('tableBody').getElementsByTagName('tr');
         for (let i = 0; i < rows.length; i++) {
             if (rows[i].classList.contains('table-warning')) continue;
-            if (keywords.length === 0) {
-                rows[i].style.display = "";
-                continue;
-            }
-            const isMatch = keywords.every(kw => rows[i].innerText.toLowerCase().includes(kw));
-            rows[i].style.display = isMatch ? "" : "none";
+            if (keywords.length === 0) { rows[i].style.display = ""; continue; }
+            rows[i].style.display = keywords.every(kw => rows[i].innerText.toLowerCase().includes(kw)) ? "" : "none";
         }
     });
 });
