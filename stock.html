@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dr. Nimmi Das Lab - Stock Register</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <style>
+        body { background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%); font-size: 0.94rem; min-height: 100vh; }
+        .glass-nav { position: sticky; top: 0; z-index: 1030; background: rgba(255,255,255,0.86); backdrop-filter: blur(12px); border-bottom: 1px solid rgba(15,23,42,0.08); }
+        .stock-card { background: #fff; border-radius: 14px; box-shadow: 0 8px 28px rgba(15,23,42,0.06); overflow: hidden; border: 1px solid rgba(15,23,42,0.06); }
+        .stock-main-row { cursor: pointer; transition: background-color 0.15s ease; }
+        .stock-main-row:hover { filter: brightness(0.97); }
+
+        /* Warning & Requirement Placed Row Highlights */
+        .row-low-warning { background-color: #fff8e1 !important; }
+        .row-low-warning td { background-color: #fff8e1 !important; }
+        .row-req-placed { background-color: #e7f1ff !important; }
+        .row-req-placed td { background-color: #e7f1ff !important; }
+
+        .acq-meta { color: #198754; font-size: 0.85rem; line-height: 1.3; }
+        .ded-meta { color: #dc3545; font-size: 0.85rem; line-height: 1.3; margin-top: 6px; }
+        .detail-row td { background-color: #f8fafc !important; padding: 14px 20px !important; }
+        .ledger-table { background: #fff; border-radius: 8px; overflow: hidden; font-size: 0.86rem; }
+        .ledger-table th { background-color: #1e293b; color: #fff; font-weight: 600; }
+        .chevron-icon { transition: transform 0.2s ease; display: inline-block; }
+        .chevron-rotated { transform: rotate(90deg); }
+
+        .login-wrapper { height: 100vh; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #e0e7ff, #f1f5f9); }
+        .login-card { background: rgba(255,255,255,0.9); padding: 36px; border-radius: 16px; width: 100%; max-width: 390px; box-shadow: 0 12px 32px rgba(0,0,0,0.08); }
+        .modal-table th { white-space: nowrap; font-size: 0.8rem; }
+        .modal-table td { vertical-align: middle; font-size: 0.85rem; }
+    </style>
+</head>
+<body>
+
+<!-- Fallback Login Screen if opened directly without session -->
+<div id="stockLoginScreen" class="login-wrapper" style="display:none;">
+    <div class="login-card text-center">
+        <i class="bi bi-clipboard2-data text-primary mb-2" style="font-size: 2.8rem;"></i>
+        <h4 class="fw-bold mb-3">Stock Register Login</h4>
+        <div class="mb-3"><input type="text" id="sUsername" class="form-control" placeholder="Username"></div>
+        <div class="mb-3"><input type="password" id="sPassword" class="form-control" placeholder="Password" onkeydown="if(event.key==='Enter') stockLogin()"></div>
+        <button id="sLoginBtn" class="btn btn-primary w-100 fw-bold" onclick="stockLogin()">Login</button>
+        <p id="sLoginErr" class="text-danger mt-2 fw-bold small" style="display:none;"></p>
+    </div>
+</div>
+
+<div id="stockApp" style="display:none;">
+    <nav class="navbar navbar-expand-lg glass-nav mb-4 px-3 py-2">
+        <div class="container-fluid">
+            <span class="navbar-brand fw-bold" style="color:#4f46e5;">
+                <i class="bi bi-clipboard2-data-fill"></i> Dr. Nimmi Das Lab — Stock Register
+            </span>
+            <div class="d-flex align-items-center gap-2 ms-auto">
+                <button class="btn btn-sm btn-primary fw-bold shadow-sm" id="btnInsertFromReq" onclick="openInsertFromReqModal()" style="display:none;">
+                    <i class="bi bi-file-earmark-plus"></i> Insert from Requirement List
+                </button>
+                <button class="btn btn-sm btn-outline-secondary shadow-sm" onclick="loadStockData()">
+                    <i class="bi bi-arrow-clockwise"></i> Refresh
+                </button>
+                <div class="border-start ps-3 ms-2 text-end lh-1">
+                    <div class="fw-bold small"><i class="bi bi-person-circle"></i> <span id="stUsername"></span></div>
+                    <small class="text-muted" style="font-size:0.75rem;" id="stRole"></small>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid px-4 pb-5">
+        <!-- KPI Summary Strip & Search -->
+        <div class="row g-3 mb-3 align-items-center">
+            <div class="col-md-5 d-flex gap-2 flex-wrap">
+                <span class="badge rounded-pill text-bg-dark px-3 py-2">Total Items: <span id="kpiTotal">0</span></span>
+                <span class="badge rounded-pill text-bg-warning px-3 py-2"><i class="bi bi-exclamation-triangle-fill"></i> Low Stock: <span id="kpiLow">0</span></span>
+                <span class="badge rounded-pill text-bg-primary px-3 py-2"><i class="bi bi-cart-check-fill"></i> Req. Placed: <span id="kpiPlaced">0</span></span>
+            </div>
+            <div class="col-md-7 d-flex justify-content-md-end gap-2 flex-wrap">
+                <select id="stockFilterMode" class="form-select form-select-sm w-auto shadow-sm" onchange="renderStockTable()">
+                    <option value="ALL">Show All Stock</option>
+                    <option value="LOW">Low Stock Warning Only</option>
+                    <option value="PLACED">Requirement Placed Only</option>
+                </select>
+                <input type="text" id="stockSearch" class="form-control form-control-sm shadow-sm" style="width:280px;" placeholder="Search item, specs, vendor, ref no, location..." oninput="renderStockTable()">
+            </div>
+        </div>
+
+        <!-- Main Stock Register Table (Click row to expand history) -->
+        <div class="stock-card">
+            <div class="table-responsive">
+                <table class="table table-bordered align-middle mb-0">
+                    <thead class="table-dark">
+                        <tr>
+                            <th style="width:32%;">Item &amp; Specification</th>
+                            <th style="width:28%;">Latest Acquirement / Deduction</th>
+                            <th style="width:18%;">Stock Qty</th>
+                            <th style="width:12%;">Threshold</th>
+                            <th style="width:10%;" class="text-center">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="stockTableBody">
+                        <tr><td colspan="5" class="text-center p-4 text-muted">Loading stock register...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <p class="small text-muted mt-2 mb-0"><i class="bi bi-info-circle"></i> Click any row to expand its complete acquirement &amp; deduction ledger.</p>
+    </div>
+</div>
+
+<!-- 1. INSERT FROM REQUIREMENT LIST MODAL (Admin / Supervisor Only) -->
+<div class="modal fade" id="insertReqModal" tabindex="-1">
+  <div class="modal-dialog modal-fullscreen-xxl-down modal-xl modal-dialog-scrollable" style="max-width: 96vw;">
+    <div class="modal-content">
+      <div class="modal-header bg-primary text-white">
+          <h5 class="modal-title"><i class="bi bi-file-earmark-plus"></i> Insert Procurement from Requirement List</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+          <div class="row g-2 align-items-end mb-3">
+              <div class="col-md-4">
+                  <label class="form-label fw-bold small mb-1">Select Requirement List</label>
+                  <select id="reqListDropdown" class="form-select form-select-sm fw-bold" onchange="loadReqListForProcurement()"></select>
+              </div>
+              <div class="col-md-8 d-flex justify-content-md-end gap-2 flex-wrap">
+                  <button class="btn btn-sm btn-outline-dark" onclick="sortProcRows('vendor_item')"><i class="bi bi-sort-alpha-down"></i> Sort: Vendor → Item</button>
+                  <button class="btn btn-sm btn-outline-dark" onclick="sortProcRows('vendor')"><i class="bi bi-sort-alpha-down"></i> Sort: Vendor</button>
+                  <button class="btn btn-sm btn-outline-dark" onclick="sortProcRows('item')"><i class="bi bi-sort-alpha-down"></i> Sort: Item</button>
+              </div>
+          </div>
+
+          <div class="alert alert-light border py-2 small mb-2">
+              <i class="bi bi-lightbulb text-warning"></i> <strong>Tip:</strong> Enter the <strong>Purchase Ref No.</strong> &amp; <strong>Date</strong> on the first row of a vendor and click <i class="bi bi-arrow-down-square-fill text-primary"></i> to copy both to all rows below for that same vendor (or <i class="bi bi-chevron-double-down text-secondary"></i> to copy to all rows below).
+          </div>
+
+          <div class="table-responsive" style="max-height: 58vh;">
+              <table class="table table-sm table-bordered modal-table mb-0">
+                  <thead class="table-dark sticky-top">
+                      <tr>
+                          <th class="text-center"><input type="checkbox" id="chkAllProc" onchange="toggleAllProcRows(this.checked)"></th>
+                          <th>Item</th>
+                          <th>Item Specification</th>
+                          <th>Req Qty</th>
+                          <th>Unit</th>
+                          <th>Req Sub Qty</th>
+                          <th style="min-width:85px;">Purchased Qty</th>
+                          <th style="min-width:105px;">Purchased Sub Qty</th>
+                          <th style="min-width:120px;">Vendor</th>
+                          <th style="min-width:105px;">Amt (incl. GST, Disc.)</th>
+                          <th style="min-width:175px;">Purchase Ref No.</th>
+                          <th style="min-width:130px;">Date of Procurement</th>
+                          <th style="min-width:120px;">Storage Location</th>
+                          <th style="min-width:125px;">Threshold (Optional)</th>
+                      </tr>
+                  </thead>
+                  <tbody id="procModalBody">
+                      <tr><td colspan="14" class="text-center p-3 text-muted">Select a requirement list above.</td></tr>
+                  </tbody>
+              </table>
+          </div>
+      </div>
+      <div class="modal-footer justify-content-between">
+          <small class="text-muted">Only checked rows with Purchased Qty &gt; 0 will be added to Stock Register &amp; synced back to the Requirement List.</small>
+          <div>
+              <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+              <button class="btn btn-success btn-sm fw-bold px-4" id="btnSubmitProc" onclick="submitProcurementBatch()">
+                  <i class="bi bi-check2-circle"></i> Save Procurement to Stock
+              </button>
+          </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 2. DEDUCT STOCK MODAL (Available to All Users) -->
+<div class="modal fade" id="deductModal" tabindex="-1">
+  <div class="modal-dialog"><div class="modal-content">
+      <div class="modal-header bg-danger text-white">
+          <h5 class="modal-title"><i class="bi bi-box-arrow-up"></i> Deduct Stock Quantity</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+          <input type="hidden" id="dedStockId">
+          <div class="p-2 rounded bg-light border mb-3">
+              <div class="fw-bold" id="dedItemName"></div>
+              <div class="small text-muted fst-italic" id="dedItemSpecs"></div>
+              <div class="small mt-1">Available Stock: <strong class="text-success" id="dedAvailDisplay"></strong></div>
+          </div>
+
+          <div class="row g-2 mb-2">
+              <div class="col-6">
+                  <label class="form-label small fw-bold mb-1">Date &amp; Time</label>
+                  <input type="text" id="dedDateTime" class="form-control form-control-sm" readonly>
+              </div>
+              <div class="col-6">
+                  <label class="form-label small fw-bold mb-1">User Name</label>
+                  <select id="dedTargetUser" class="form-select form-select-sm" onchange="updateProxyAuthStatus()"></select>
+              </div>
+          </div>
+          <div id="proxyAuthBadge" class="small mb-2" style="display:none;"></div>
+
+          <div class="row g-2 mb-2">
+              <div class="col-6">
+                  <label class="form-label small fw-bold mb-1">Deducted Qty</label>
+                  <input type="number" step="0.01" min="0.01" id="dedQtyInput" class="form-control form-control-sm" placeholder="Enter qty" oninput="updateDeductPreview()">
+              </div>
+              <div class="col-6">
+                  <label class="form-label small fw-bold mb-1">Deducted Unit</label>
+                  <select id="dedUnitMode" class="form-select form-select-sm" onchange="updateDeductPreview()"></select>
+              </div>
+          </div>
+
+          <div class="p-2 rounded border mb-3 bg-body-tertiary">
+              <span class="small text-muted">Remaining Stock (Auto-Calculated):</span>
+              <div class="fw-bold text-primary" id="dedRemainingPreview">—</div>
+          </div>
+
+          <div class="mb-2">
+              <label class="form-label small fw-bold mb-1">Purpose of Deduction <span class="text-muted fw-normal">(optional)</span></label>
+              <input type="text" id="dedPurpose" class="form-control form-control-sm" placeholder="e.g., DLS experiment, buffer prep...">
+          </div>
+      </div>
+      <div class="modal-footer">
+          <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+          <button class="btn btn-danger btn-sm fw-bold px-4" id="btnConfirmDeduct" onclick="initiateDeduction()">Confirm Deduction</button>
+      </div>
+  </div></div>
+</div>
+
+<!-- 3. SECOND USER PASSWORD VALIDATION MODAL (2-Minute Cache) -->
+<div class="modal fade" id="proxyPasswordModal" tabindex="-1" data-bs-backdrop="static">
+  <div class="modal-dialog modal-sm modal-dialog-centered"><div class="modal-content">
+      <div class="modal-header bg-warning">
+          <h6 class="modal-title fw-bold"><i class="bi bi-key-fill"></i> Verify User Password</h6>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+          <p class="small mb-2">Enter password for <strong id="proxyTargetLabel"></strong> to authorize deduction on their behalf. <span class="text-muted">(Valid for 2 minutes)</span></p>
+          <input type="password" id="proxyPassInput" class="form-control form-control-sm" placeholder="Password" onkeydown="if(event.key==='Enter') verifyProxyAndDeduct()">
+          <div id="proxyPassErr" class="text-danger small fw-bold mt-2" style="display:none;"></div>
+      </div>
+      <div class="modal-footer p-2">
+          <button class="btn btn-warning btn-sm w-100 fw-bold" id="btnVerifyProxy" onclick="verifyProxyAndDeduct()">Verify &amp; Deduct</button>
+      </div>
+  </div></div>
+</div>
+
+<!-- 4. EDIT LOCATION & THRESHOLD MODAL -->
+<div class="modal fade" id="editStockMetaModal" tabindex="-1">
+  <div class="modal-dialog modal-sm"><div class="modal-content">
+      <div class="modal-header">
+          <h6 class="modal-title fw-bold"><i class="bi bi-sliders"></i> Stock Settings</h6>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+          <input type="hidden" id="metaStockId">
+          <div class="fw-bold small mb-2" id="metaItemTitle"></div>
+          <div class="mb-2">
+              <label class="form-label small fw-bold mb-1">Storage Location</label>
+              <input type="text" id="metaLocation" class="form-control form-control-sm" placeholder="e.g., Shelf B2, Fridge 1">
+          </div>
+          <div class="row g-2 mb-2">
+              <div class="col-6">
+                  <label class="form-label small fw-bold mb-1">Threshold</label>
+                  <input type="number" step="0.01" min="0" id="metaThreshold" class="form-control form-control-sm">
+              </div>
+              <div class="col-6">
+                  <label class="form-label small fw-bold mb-1">Threshold Unit</label>
+                  <select id="metaThresholdType" class="form-select form-select-sm"></select>
+              </div>
+          </div>
+          <div class="small text-muted">Low-stock warning triggers automatically when remaining stock reaches <strong>Threshold + 10</strong>.</div>
+      </div>
+      <div class="modal-footer p-2">
+          <button class="btn btn-success btn-sm w-100 fw-bold" onclick="saveStockMeta()">Save Settings</button>
+      </div>
+  </div></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="stock.js"></script>
+</body>
+</html>
