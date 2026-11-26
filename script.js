@@ -1,4 +1,4 @@
-const API_URL = "https://script.google.com/macros/s/AKfycbxkDBmVRgyuB8yKgLxx_-qAuQNI9z2xOEd-pzGt4QzNhXJ1aOc0WfDtENvxkYguRK9l/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbwD_GLzrBzNz9ZAaJNXQ5O0__m6Tlyp-q3-EaU1pc-1R_Y__56FZVzBBnYYyXsFSFra/exec";
 
 let USER = null;
 let productDB = {};
