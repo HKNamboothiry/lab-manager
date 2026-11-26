@@ -92,15 +92,16 @@
                 <table class="table table-bordered align-middle mb-0">
                     <thead class="table-dark">
                         <tr>
-                            <th style="width:32%;">Item &amp; Specification</th>
-                            <th style="width:28%;">Latest Acquirement / Deduction</th>
-                            <th style="width:18%;">Stock Qty</th>
-                            <th style="width:12%;">Threshold</th>
+                            <th style="width:28%;">Item &amp; Specification</th>
+                            <th style="width:26%;">Latest Acquirement / Deduction</th>
+                            <th style="width:16%;">Stock Qty</th>
+                            <th style="width:10%;">Sub Qty / Unit</th>
+                            <th style="width:10%;">Threshold</th>
                             <th style="width:10%;" class="text-center">Actions</th>
                         </tr>
                     </thead>
                     <tbody id="stockTableBody">
-                        <tr><td colspan="5" class="text-center p-4 text-muted">Loading stock register...</td></tr>
+                        <tr><td colspan="6" class="text-center p-4 text-muted">Loading stock register...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -111,7 +112,7 @@
 
 <!-- 1. INSERT FROM REQUIREMENT LIST MODAL (Admin / Supervisor Only) -->
 <div class="modal fade" id="insertReqModal" tabindex="-1">
-  <div class="modal-dialog modal-fullscreen-xxl-down modal-xl modal-dialog-scrollable" style="max-width: 96vw;">
+  <div class="modal-dialog modal-fullscreen-xxl-down modal-xl modal-dialog-scrollable" style="max-width: 97vw;">
     <div class="modal-content">
       <div class="modal-header bg-primary text-white">
           <h5 class="modal-title"><i class="bi bi-file-earmark-plus"></i> Insert Procurement from Requirement List</h5>
@@ -144,8 +145,10 @@
                           <th>Req Qty</th>
                           <th>Unit</th>
                           <th>Req Sub Qty</th>
+                          <th>Req Sub Unit</th>
                           <th style="min-width:85px;">Purchased Qty</th>
-                          <th style="min-width:105px;">Purchased Sub Qty</th>
+                          <th style="min-width:90px;">Purchased Sub Qty</th>
+                          <th style="min-width:100px;">Purchased Sub Unit</th>
                           <th style="min-width:120px;">Vendor</th>
                           <th style="min-width:105px;">Amt (incl. GST, Disc.)</th>
                           <th style="min-width:175px;">Purchase Ref No.</th>
@@ -155,7 +158,7 @@
                       </tr>
                   </thead>
                   <tbody id="procModalBody">
-                      <tr><td colspan="14" class="text-center p-3 text-muted">Select a requirement list above.</td></tr>
+                      <tr><td colspan="16" class="text-center p-3 text-muted">Select a requirement list above.</td></tr>
                   </tbody>
               </table>
           </div>
