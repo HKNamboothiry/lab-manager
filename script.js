@@ -2215,6 +2215,100 @@ function downloadProcurementSummaryPdf() {
 }
 
 // -------------------------------------------------------------
+// BILLS UPLOAD & VIEW (Google Drive: BILLS_LAB_MANAGER / <List>)
+// -------------------------------------------------------------
+async function openBillsModal() {
+    const listName = document.getElementById('listSelector').value;
+    if (!listName) return alert("Please select a requirement list first.");
+
+    document.getElementById('billsListTitle').innerText = listName;
+    document.getElementById('billsFolderPath').innerText = listName;
+    document.getElementById('billRefPrefix').value = "";
+    document.getElementById('billFileInput').value = "";
+    document.getElementById('billsFolderLink').style.display = "none";
+
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('billsModal')).show();
+    await loadListBills(listName);
+}
+
+async function loadListBills(listName) {
+    const container = document.getElementById('billsListContainer');
+    container.innerHTML = `<div class="p-3 text-center text-muted small"><i class="bi bi-hourglass-split"></i> Loading uploaded bills...</div>`;
+    try {
+        const res = await apiPost({ action: "getListBills", listName: listName });
+        if (res.status === "success") {
+            const folderLink = document.getElementById('billsFolderLink');
+            if (res.folderUrl) {
+                folderLink.href = res.folderUrl;
+                folderLink.style.display = "inline";
+            }
+            const files = res.files || [];
+            if (files.length === 0) {
+                container.innerHTML = `<div class="p-3 text-center text-muted small fst-italic">No bills uploaded for this list yet.</div>`;
+                return;
+            }
+            container.innerHTML = files.map(f => `
+                <a href="${esc(f.url)}" target="_blank" rel="noopener noreferrer" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center py-2">
+                    <div>
+                        <i class="bi bi-file-earmark-text text-success me-2"></i>
+                        <span class="fw-semibold">${esc(f.name)}</span>
+                    </div>
+                    <small class="text-muted">${esc(f.date)}</small>
+                </a>
+            `).join('');
+        } else {
+            container.innerHTML = `<div class="p-3 text-center text-danger small">${esc(res.message || 'Failed to load bills.')}</div>`;
+        }
+    } catch (e) {
+        container.innerHTML = `<div class="p-3 text-center text-danger small">Connection error while loading bills.</div>`;
+    }
+}
+
+function uploadBillFile() {
+    const listName = document.getElementById('listSelector').value;
+    const fileInput = document.getElementById('billFileInput');
+    const prefix = (document.getElementById('billRefPrefix').value || "").trim().replace(/[\\/:*?"<>|]/g, '_');
+
+    if (!listName) return alert("Select a list first.");
+    if (!fileInput.files || fileInput.files.length === 0) return alert("Please choose a bill file to upload.");
+
+    const file = fileInput.files[0];
+    if (file.size > 15 * 1024 * 1024) return alert("File is too large. Please keep bill files under 15 MB.");
+
+    const finalName = prefix ? `${prefix}_${file.name}` : file.name;
+    const btn = document.getElementById('btnUploadBill');
+    btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Uploading...';
+    btn.disabled = true;
+
+    const reader = new FileReader();
+    reader.onload = async function(e) {
+        try {
+            const base64Data = e.target.result.split(',')[1];
+            const res = await apiPost({
+                action: "uploadBill",
+                listName: listName,
+                fileName: finalName,
+                mimeType: file.type || "application/octet-stream",
+                fileData: base64Data
+            });
+            if (res.status === "success") {
+                document.getElementById('billRefPrefix').value = "";
+                fileInput.value = "";
+                await loadListBills(listName);
+            } else {
+                alert(res.message || "Upload failed.");
+            }
+        } catch (err) {
+            alert("Connection error while uploading bill.");
+        } finally {
+            btn.innerHTML = '<i class="bi bi-cloud-upload"></i> Upload Bill';
+            btn.disabled = false;
+        }
+    };
+    reader.readAsDataURL(file);
+}
+
+// -------------------------------------------------------------
 // GLOBAL EVENT LISTENERS
 // -------------------------------------------------------------
 document.addEventListener('DOMContentLoaded', () => {
