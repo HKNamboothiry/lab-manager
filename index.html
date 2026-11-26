@@ -35,6 +35,14 @@
         tbody tr:hover td.sticky-col-0, tbody tr:hover td.sticky-col-1, tbody tr:hover td.sticky-col-2, tbody tr:hover td.sticky-col-3 { background-color: var(--cell-hover); }
         tbody tr.table-warning td.sticky-col-0, tbody tr.table-warning td.sticky-col-1, tbody tr.table-warning td.sticky-col-2, tbody tr.table-warning td.sticky-col-3 { background-color: #fff3cd; }
 
+        /* Collapsible Acquisition Group Headers */
+        .group-header-row { cursor: pointer; user-select: none; }
+        .group-header-row td { padding: 8px 12px !important; font-weight: 700; }
+        .group-header-sticky { position: sticky; left: 12px; display: inline-flex; align-items: center; gap: 8px; }
+        .group-acquired td { background-color: #d1e7dd !important; color: #0f5132; }
+        .group-partly td   { background-color: #fff3cd !important; color: #664d03; }
+        .group-pending td  { background-color: #cfe2ff !important; color: #084298; }
+
         /* Single-line 10pt italic Reference Link */
         .ref-line {
             display: block; font-style: italic; font-size: 10pt; line-height: 1.3; color: #495057;
