@@ -13,10 +13,12 @@ let collapsedGroups = { acquired: false, partly: false, toAcquire: false };
 
 const BASE_HEADERS = [
     "SL No", "Item", "Item Specs", "Reference Link", "Preferred Company", "Product Code",
-    "Required Quantity", "Unit", "Sub Quantity", "Acquired Qty", "Acquired Sub Qty",
+    "Required Quantity", "Unit", "Sub Quantity", "Sub Unit",
+    "Acquired Qty", "Acquired Sub Qty", "Acquired Sub Unit",
     "Estimated Price", "Selected Vendor", "Total Estimate", "Bill Ref No", "Date of Procurement"
 ];
 const DEFAULT_UNITS = ["Piece", "Packet", "Box", "Roll", "Bottle"];
+const DEFAULT_SUB_UNITS = ["Piece", "mL", "L", "g", "kg", "Pair", "Roll"];
 
 function isPieceUnit(unit) {
     return (unit || "Piece").trim().toLowerCase() === "piece";
@@ -68,6 +70,21 @@ function truncatePdfLine(doc, text, maxWidth) {
 function buildUnitOptions(selectedUnit) {
     const curr = (selectedUnit || "Piece").trim();
     const units = [...DEFAULT_UNITS];
+    if (curr && !units.some(u => u.toLowerCase() === curr.toLowerCase())) units.unshift(curr);
+    let html = units.map(u => {
+        const sel = u.toLowerCase() === curr.toLowerCase() ? "selected" : "";
+        return `<option value="${esc(u)}" ${sel}>${esc(u)}</option>`;
+    }).join('');
+    html += `<option value="_NEW_">+ Add</option>`;
+    return html;
+}
+
+function buildSubUnitOptions(selectedSubUnit, disabledFlag = false) {
+    if (disabledFlag) {
+        return `<option value="" selected>-</option>`;
+    }
+    const curr = (selectedSubUnit || "Piece").trim();
+    const units = [...DEFAULT_SUB_UNITS];
     if (curr && !units.some(u => u.toLowerCase() === curr.toLowerCase())) units.unshift(curr);
     let html = units.map(u => {
         const sel = u.toLowerCase() === curr.toLowerCase() ? "selected" : "";
@@ -215,7 +232,7 @@ async function handleListChange() {
         return;
     }
 
-    document.getElementById('tableBody').innerHTML = '<tr><td colspan="22" class="text-center">Loading...</td></tr>';
+    document.getElementById('tableBody').innerHTML = '<tr><td colspan="25" class="text-center">Loading...</td></tr>';
     const listMeta = getCurrentListMeta();
     if (listMeta) document.getElementById('budgetInHand').value = listMeta.budget;
     updateClosedUI();
@@ -234,7 +251,7 @@ async function handleListChange() {
         renderTable();
         updateAlertBadge();
     } catch (e) {
-        document.getElementById('tableBody').innerHTML = '<tr><td colspan="22" class="text-danger text-center">Load failed.</td></tr>';
+        document.getElementById('tableBody').innerHTML = '<tr><td colspan="25" class="text-danger text-center">Load failed.</td></tr>';
     }
 }
 
@@ -294,6 +311,7 @@ function renderAlertsModal() {
 
     unacquired.forEach((a, idx) => {
         const inputId = `alertUnacqQty_${idx}`;
+        const subInfo = (!isPieceUnit(a.unit) && a.subQty) ? `<br><span class="text-muted">${esc(a.subQty)} ${esc(a.subUnit || 'Piece')}</span>` : '';
         html += `<tr class="alert-row-unacq">
             <td><span class="badge bg-danger">Unacquired</span></td>
             <td>
@@ -304,7 +322,7 @@ function renderAlertsModal() {
                 From list: <strong>${esc(a.sourceList)}</strong><br>
                 Req: ${a.reqQty} | Acq: ${a.acqQty} | <span class="text-danger fw-bold">Pending: ${a.shortfall}</span>
             </td>
-            <td class="small">${esc(a.unit)}${a.subQty ? `<br><span class="text-muted">${esc(a.subQty)}</span>` : ''}</td>
+            <td class="small">${esc(a.unit)}${subInfo}</td>
             <td><input type="number" id="${inputId}" class="form-control form-control-sm" min="1" value="${a.shortfall}"></td>
             <td class="text-center text-nowrap">
                 <button class="btn btn-sm btn-success py-0 px-2" onclick="addAlertItemToList('unacq', ${idx})"><i class="bi bi-plus-circle"></i> Add</button>
@@ -315,7 +333,8 @@ function renderAlertsModal() {
 
     lowStock.forEach((a, idx) => {
         const inputId = `alertLowQty_${idx}`;
-        const remText = a.subPerUnit > 1 ? `${a.totalBase} ${a.subLabel || 'pcs'}` : `${a.totalBase} ${a.unit}`;
+        const remText = a.subPerUnit > 1 ? `${a.totalBase} ${a.subLabel || 'Piece'}` : `${a.totalBase} ${a.unit}`;
+        const subInfo = (!isPieceUnit(a.unit) && a.subQty) ? `<br><span class="text-muted">${esc(a.subQty)} ${esc(a.subUnit || 'Piece')}</span>` : '';
         html += `<tr class="alert-row-lowstk">
             <td><span class="badge bg-warning text-dark">Low Stock</span></td>
             <td>
@@ -326,7 +345,7 @@ function renderAlertsModal() {
                 Stock: <strong class="text-danger">${esc(remText)}</strong> | Threshold: <strong>${a.threshold}</strong><br>
                 Prev Acquired Qty: ${a.prevAcqQty}
             </td>
-            <td class="small">${esc(a.unit)}${a.subQty ? `<br><span class="text-muted">${esc(a.subQty)}</span>` : ''}</td>
+            <td class="small">${esc(a.unit)}${subInfo}</td>
             <td><input type="number" id="${inputId}" class="form-control form-control-sm" min="1" value="${a.prevAcqQty || 1}"></td>
             <td class="text-center text-nowrap">
                 <button class="btn btn-sm btn-primary py-0 px-2" onclick="addAlertItemToList('lowstk', ${idx})"><i class="bi bi-plus-circle"></i> Add</button>
@@ -361,6 +380,7 @@ async function addAlertItemToList(type, idx) {
         currentListData[existingIdx]['Required Quantity'] = curQty + qtyToAdd;
     } else {
         collapsedGroups.toAcquire = false;
+        const pieceFlag = isPieceUnit(item.unit);
         let newRow = {
             'Item': item.item,
             'Item Specs': item.specs || '',
@@ -369,9 +389,11 @@ async function addAlertItemToList(type, idx) {
             'Product Code': item.code || '',
             'Required Quantity': qtyToAdd,
             'Unit': item.unit || 'Piece',
-            'Sub Quantity': isPieceUnit(item.unit) ? '' : (item.subQty || ''),
+            'Sub Quantity': pieceFlag ? '' : (item.subQty || ''),
+            'Sub Unit': pieceFlag ? '' : (item.subUnit || 'Piece'),
             'Acquired Qty': 0,
             'Acquired Sub Qty': '',
+            'Acquired Sub Unit': '',
             'Estimated Price': item.estPrice || '',
             'Selected Vendor': '',
             'Total Estimate': '',
@@ -481,9 +503,11 @@ function renderTable() {
         <th>Product Code</th>
         <th>Req Qty</th>
         <th>Unit</th>
-        <th>Sub Qty / Pack</th>
+        <th>Sub Qty</th>
+        <th>Sub Unit</th>
         <th class="text-warning">Acq Qty</th>
         <th class="text-warning">Acq Sub Qty</th>
+        <th class="text-warning">Acq Sub Unit</th>
         <th>Est Price</th>
         <th>Selected Vendor</th>
         <th class="text-success">Total Estimate</th>
@@ -518,9 +542,8 @@ function renderTable() {
         { key: 'partly',    label: 'Partly Acquired Items', css: 'group-partly' }
     ];
 
-    // Show group headers only when Acquired or Partly Acquired items exist; skip any empty group
     const showGroupHeaders = (buckets.acquired.length > 0 || buckets.partly.length > 0);
-    const totalCols = 16 + activeVendors.length;
+    const totalCols = 18 + activeVendors.length;
     let rowsHTML = "";
 
     groupDefs.forEach(g => {
@@ -548,6 +571,7 @@ function renderTable() {
             const totalEst = parseFloat(row['Total Estimate']) || 0;
             const unitVal = row['Unit'] || 'Piece';
             const pieceFlag = isPieceUnit(unitVal);
+            const subUnitVal = pieceFlag ? '' : (row['Sub Unit'] || 'Piece');
 
             if (!row._isEditing) {
                 let selVendor = row['Selected Vendor'] || '';
@@ -590,14 +614,22 @@ function renderTable() {
                         </select>
                     </td>
                     <td>
-                        <input type="text" id="liveSubQty_${i}" class="form-control form-control-sm" style="width: 115px;"
+                        <input type="number" step="any" min="0" id="liveSubQty_${i}" class="form-control form-control-sm number-box"
                                value="${pieceFlag ? '' : esc(row['Sub Quantity'])}"
-                               placeholder="${pieceFlag ? '-' : 'e.g. 100 pcs'}"
+                               placeholder="${pieceFlag ? '-' : '100'}"
                                onchange="updateLiveRow(${i}, 'Sub Quantity', this.value)"
                                ${(pieceFlag || closed) ? 'disabled' : ''}>
                     </td>
+                    <td>
+                        <select id="liveSubUnit_${i}" class="form-select form-select-sm sub-unit-box"
+                                onchange="updateLiveSubUnit(${i}, this)"
+                                ${(pieceFlag || closed) ? 'disabled' : ''}>
+                            ${buildSubUnitOptions(subUnitVal, pieceFlag)}
+                        </select>
+                    </td>
                     <td class="text-center ${acqBadgeClass}">${acqQty || 0}</td>
                     <td class="text-center small text-muted">${esc(row['Acquired Sub Qty'] || '-')}</td>
+                    <td class="text-center small text-muted">${esc(row['Acquired Sub Unit'] || '-')}</td>
                     <td><input type="number" step="0.01" class="form-control form-control-sm number-box" value="${esc(row['Estimated Price'])}" onchange="updateLiveRow(${i}, 'Estimated Price', this.value)" ${closed ? 'disabled' : ''}></td>
 
                     <td class="fw-bold text-primary">${esc(selVendor)}</td>
@@ -631,13 +663,21 @@ function renderTable() {
                         </select>
                     </td>
                     <td>
-                        <input type="text" class="form-control form-control-sm pSubQty" style="width: 115px;"
+                        <input type="number" step="any" min="0" class="form-control form-control-sm pSubQty number-box"
                                value="${pieceFlag ? '' : esc(row['Sub Quantity'])}"
-                               placeholder="${pieceFlag ? '-' : 'e.g. 100 pcs'}"
+                               placeholder="${pieceFlag ? '-' : '100'}"
                                ${pieceFlag ? 'disabled' : ''}>
+                    </td>
+                    <td>
+                        <select class="form-select form-select-sm pSubUnit sub-unit-box"
+                                onchange="handleEditSubUnitChange(this)"
+                                ${pieceFlag ? 'disabled' : ''}>
+                            ${buildSubUnitOptions(subUnitVal, pieceFlag)}
+                        </select>
                     </td>
                     <td class="text-center text-muted small">${acqQty || 0}</td>
                     <td class="text-center text-muted small">${esc(row['Acquired Sub Qty'] || '-')}</td>
+                    <td class="text-center text-muted small">${esc(row['Acquired Sub Unit'] || '-')}</td>
                     <td><input type="number" step="0.01" class="form-control form-control-sm pEstPrice number-box" value="${esc(row['Estimated Price'])}"></td>
                     <td colspan="4" class="text-muted small text-center">Save row first</td>
                     ${blankVendorCells}
@@ -668,18 +708,40 @@ function handleEditUnitChange(sel) {
     toggleSubQtyInput(sel);
 }
 
+function handleEditSubUnitChange(sel) {
+    if (sel.value === "_NEW_") {
+        const u = prompt("Enter new sub-unit type (e.g. Piece, mL, g, Pair):");
+        if (u && u.trim()) {
+            const cleanU = u.trim();
+            sel.add(new Option(cleanU, cleanU), sel.options[0]);
+            sel.value = cleanU;
+        } else {
+            sel.value = "Piece";
+        }
+    }
+}
+
 function toggleSubQtyInput(unitSel) {
     const tr = unitSel.closest('tr');
     if (!tr) return;
     const subInput = tr.querySelector('.pSubQty');
-    if (!subInput) return;
+    const subUnitSel = tr.querySelector('.pSubUnit');
+    if (!subInput || !subUnitSel) return;
+
     if (isPieceUnit(unitSel.value)) {
         subInput.value = '';
         subInput.placeholder = '-';
         subInput.disabled = true;
+
+        subUnitSel.innerHTML = buildSubUnitOptions('', true);
+        subUnitSel.disabled = true;
     } else {
         subInput.disabled = false;
-        subInput.placeholder = 'e.g. 100 pcs';
+        subInput.placeholder = '100';
+
+        const prevSubUnit = subUnitSel.value || 'Piece';
+        subUnitSel.disabled = false;
+        subUnitSel.innerHTML = buildSubUnitOptions(prevSubUnit, false);
         if (!subInput.value) subInput.focus();
     }
 }
@@ -711,13 +773,33 @@ function updateLiveUnit(i, sel) {
         currentListData[i]['Unit'] = sel.value;
     }
 
-    if (isPieceUnit(currentListData[i]['Unit'])) currentListData[i]['Sub Quantity'] = '';
+    if (isPieceUnit(currentListData[i]['Unit'])) {
+        currentListData[i]['Sub Quantity'] = '';
+        currentListData[i]['Sub Unit'] = '';
+    } else if (!currentListData[i]['Sub Unit']) {
+        currentListData[i]['Sub Unit'] = 'Piece';
+    }
     renderTable();
 
     if (!isPieceUnit(currentListData[i]['Unit'])) {
         const subInput = document.getElementById(`liveSubQty_${i}`);
         if (subInput && !subInput.value) subInput.focus();
     }
+}
+
+function updateLiveSubUnit(i, sel) {
+    if (sel.value === "_NEW_") {
+        const u = prompt("Enter new sub-unit type (e.g. Piece, mL, g, Pair):");
+        if (u && u.trim()) {
+            currentListData[i]['Sub Unit'] = u.trim();
+        } else {
+            sel.value = currentListData[i]['Sub Unit'] || 'Piece';
+            return;
+        }
+    } else {
+        currentListData[i]['Sub Unit'] = sel.value;
+    }
+    renderTable();
 }
 
 function updateVendorPrice(i, v, val) {
@@ -771,7 +853,11 @@ function handleEnter(e, elem, index) {
                 uSel.add(new Option(mUnit, mUnit), uSel.options[0]);
             }
             uSel.value = mUnit;
-            tr.querySelector('.pSubQty').value = isPieceUnit(mUnit) ? "" : (match.subQty || "");
+
+            const pieceFlag = isPieceUnit(mUnit);
+            tr.querySelector('.pSubQty').value = pieceFlag ? "" : (match.subQty || "");
+            const suSel = tr.querySelector('.pSubUnit');
+            suSel.innerHTML = buildSubUnitOptions(pieceFlag ? "" : (match.subUnit || "Piece"), pieceFlag);
             toggleSubQtyInput(uSel);
         }
     }
@@ -832,8 +918,9 @@ function addNewRow() {
     collapsedGroups.toAcquire = false;
     let newRow = {
         _isEditing: true, _isNew: true, 'Reference Link': '',
-        'Required Quantity': 1, 'Unit': 'Piece', 'Sub Quantity': '',
-        'Acquired Qty': 0, 'Acquired Sub Qty': '', 'Bill Ref No': '', 'Date of Procurement': ''
+        'Required Quantity': 1, 'Unit': 'Piece', 'Sub Quantity': '', 'Sub Unit': '',
+        'Acquired Qty': 0, 'Acquired Sub Qty': '', 'Acquired Sub Unit': '',
+        'Bill Ref No': '', 'Date of Procurement': ''
     };
     activeVendors.forEach(v => newRow[v] = "");
     currentListData.push(newRow);
@@ -852,6 +939,7 @@ function duplicateRow(i) {
     clonedRow['Total Estimate'] = '';
     clonedRow['Acquired Qty'] = 0;
     clonedRow['Acquired Sub Qty'] = '';
+    clonedRow['Acquired Sub Unit'] = '';
     clonedRow['Bill Ref No'] = '';
     clonedRow['Date of Procurement'] = '';
     activeVendors.forEach(v => clonedRow[v] = '');
@@ -892,7 +980,9 @@ async function saveRow(i) {
     const refLink = tr.querySelector('.pRefLink').value.trim();
     const qty = parseFloat(tr.querySelector('.pQty').value) || 0;
     const unitVal = tr.querySelector('.pUnit').value;
-    const subQtyVal = isPieceUnit(unitVal) ? '' : tr.querySelector('.pSubQty').value.trim();
+    const pieceFlag = isPieceUnit(unitVal);
+    const subQtyVal = pieceFlag ? '' : tr.querySelector('.pSubQty').value.trim();
+    const subUnitVal = pieceFlag ? '' : (tr.querySelector('.pSubUnit').value || 'Piece');
 
     if (!item) return alert("Item Name is required.");
     if (qty < 1) return alert("Quantity must be at least 1.");
@@ -909,8 +999,10 @@ async function saveRow(i) {
         'Required Quantity': qty,
         'Unit': unitVal,
         'Sub Quantity': subQtyVal,
+        'Sub Unit': subUnitVal,
         'Acquired Qty': orig['Acquired Qty'] || 0,
         'Acquired Sub Qty': orig['Acquired Sub Qty'] || '',
+        'Acquired Sub Unit': orig['Acquired Sub Unit'] || '',
         'Estimated Price': tr.querySelector('.pEstPrice').value,
         'Selected Vendor': sv,
         'Bill Ref No': orig['Bill Ref No'] || '',
@@ -1050,7 +1142,7 @@ function renderInventoryTable() {
     const rawTerm = inventorySearchTerm.toLowerCase().trim();
 
     if (rawTerm.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="8" class="text-center text-muted p-4"><i class="bi bi-search fs-4 d-block mb-2"></i> Start typing to search DB...</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="9" class="text-center text-muted p-4"><i class="bi bi-search fs-4 d-block mb-2"></i> Start typing to search DB...</td></tr>`;
         return;
     }
 
@@ -1061,7 +1153,7 @@ function renderInventoryTable() {
 
     for (const [dbId, p] of Object.entries(productDB)) {
         if (count >= MAX_RESULTS) break;
-        const searchableText = `${p.item || ''} ${p.specs || ''} ${p.refLink || ''} ${p.prefComp || ''} ${p.code || ''} ${p.unit || ''} ${p.subQty || ''}`.toLowerCase();
+        const searchableText = `${p.item || ''} ${p.specs || ''} ${p.refLink || ''} ${p.prefComp || ''} ${p.code || ''} ${p.unit || ''} ${p.subQty || ''} ${p.subUnit || ''}`.toLowerCase();
 
         if (!keywords.every(kw => searchableText.includes(kw))) continue;
 
@@ -1071,6 +1163,7 @@ function renderInventoryTable() {
                    <button class="btn btn-sm btn-outline-danger py-0 px-1 ms-1" onclick="deleteProduct('${dbId}')"><i class="bi bi-trash"></i></button>`;
         }
 
+        const pieceFlag = isPieceUnit(p.unit);
         htmlBuffer += `<tr>
             <td class="fw-bold">${esc(p.item)}</td>
             <td class="text-wrap">
@@ -1080,7 +1173,8 @@ function renderInventoryTable() {
             <td>${esc(p.prefComp)}</td>
             <td>${esc(p.code)}</td>
             <td>${esc(p.unit)}</td>
-            <td>${esc(p.subQty)}</td>
+            <td>${pieceFlag ? '-' : esc(p.subQty)}</td>
+            <td>${pieceFlag ? '-' : esc(p.subUnit)}</td>
             <td>${esc(p.estPrice)}</td>
             <td class="text-center text-nowrap">${actionBtns}</td>
         </tr>`;
@@ -1089,9 +1183,9 @@ function renderInventoryTable() {
 
     if (count === 0) {
         const kwString = keywords.map(k => `"${esc(k)}"`).join(", ");
-        htmlBuffer = `<tr><td colspan="8" class="text-center text-danger p-3 fw-bold"><i class="bi bi-exclamation-triangle"></i> No products matched all keywords: ${kwString}</td></tr>`;
+        htmlBuffer = `<tr><td colspan="9" class="text-center text-danger p-3 fw-bold"><i class="bi bi-exclamation-triangle"></i> No products matched all keywords: ${kwString}</td></tr>`;
     } else if (count === MAX_RESULTS) {
-        htmlBuffer += `<tr><td colspan="8" class="text-center text-muted bg-light">Showing top ${MAX_RESULTS} results...</td></tr>`;
+        htmlBuffer += `<tr><td colspan="9" class="text-center text-muted bg-light">Showing top ${MAX_RESULTS} results...</td></tr>`;
     }
     tbody.innerHTML = htmlBuffer;
 }
@@ -1101,6 +1195,7 @@ function addFromInventory(dbId) {
     const p = productDB[dbId];
     if (!p) return;
     collapsedGroups.toAcquire = false;
+    const pieceFlag = isPieceUnit(p.unit);
     let newRow = {
         'Item': p.item,
         'Item Specs': p.specs || '',
@@ -1109,9 +1204,11 @@ function addFromInventory(dbId) {
         'Product Code': p.code || '',
         'Required Quantity': 1,
         'Unit': p.unit || 'Piece',
-        'Sub Quantity': isPieceUnit(p.unit) ? '' : (p.subQty || ''),
+        'Sub Quantity': pieceFlag ? '' : (p.subQty || ''),
+        'Sub Unit': pieceFlag ? '' : (p.subUnit || 'Piece'),
         'Acquired Qty': 0,
         'Acquired Sub Qty': '',
+        'Acquired Sub Unit': '',
         'Estimated Price': p.estPrice || '',
         'Selected Vendor': '',
         'Total Estimate': '',
@@ -1138,6 +1235,7 @@ function openEditProduct(dbId) {
     document.getElementById('editCode').value = p.code || '';
     document.getElementById('editUnit').value = p.unit || 'Piece';
     document.getElementById('editSubQty').value = p.subQty || '';
+    document.getElementById('editSubUnit').value = p.subUnit || '';
     document.getElementById('editPrice').value = p.estPrice || '';
     toggleModalCode();
     toggleModalSubQty();
@@ -1156,8 +1254,15 @@ function toggleModalCode() {
 function toggleModalSubQty() {
     const uVal = document.getElementById('editUnit').value;
     const sqBox = document.getElementById('editSubQty');
-    if (isPieceUnit(uVal)) { sqBox.value = ''; sqBox.disabled = true; }
-    else sqBox.disabled = false;
+    const suBox = document.getElementById('editSubUnit');
+    if (isPieceUnit(uVal)) {
+        sqBox.value = ''; sqBox.disabled = true;
+        suBox.value = ''; suBox.disabled = true;
+    } else {
+        sqBox.disabled = false;
+        suBox.disabled = false;
+        if (!suBox.value) suBox.value = 'Piece';
+    }
 }
 
 async function submitProductEdit() {
@@ -1166,6 +1271,7 @@ async function submitProductEdit() {
     btn.disabled = true;
 
     const unitVal = document.getElementById('editUnit').value.trim() || 'Piece';
+    const pieceFlag = isPieceUnit(unitVal);
     await apiPost({
         action: "updateProduct",
         role: USER.role,
@@ -1177,7 +1283,8 @@ async function submitProductEdit() {
             prefComp: document.getElementById('editComp').value.trim() || 'Any',
             code: document.getElementById('editCode').value.trim(),
             unit: unitVal,
-            subQty: isPieceUnit(unitVal) ? '' : document.getElementById('editSubQty').value.trim(),
+            subQty: pieceFlag ? '' : document.getElementById('editSubQty').value.trim(),
+            subUnit: pieceFlag ? '' : (document.getElementById('editSubUnit').value.trim() || 'Piece'),
             estPrice: document.getElementById('editPrice').value
         }
     });
@@ -1274,11 +1381,11 @@ function renderExportCheckboxes() {
         colsToOffer = BASE_HEADERS.filter(h => h !== "Reference Link").concat(activeVendors);
         if (budgetChk) budgetChk.checked = true;
     } else if (mode === "RFQ") {
-        colsToOffer = ["SL No", "Item", "Item Specs", "Preferred Company", "Product Code", "Required Quantity", "Unit", "Sub Quantity", "Vendor Unit Price", "Vendor Total"];
+        colsToOffer = ["SL No", "Item", "Item Specs", "Preferred Company", "Product Code", "Required Quantity", "Unit", "Sub Quantity", "Sub Unit", "Vendor Unit Price", "Vendor Total"];
         uncheckedByDefault = ["Vendor Unit Price", "Vendor Total"];
         if (budgetChk) budgetChk.checked = false;
     } else {
-        colsToOffer = ["SL No", "Item", "Item Specs", "Preferred Company", "Product Code", "Required Quantity", "Unit", "Sub Quantity", "Unit Price", "Total Estimate"];
+        colsToOffer = ["SL No", "Item", "Item Specs", "Preferred Company", "Product Code", "Required Quantity", "Unit", "Sub Quantity", "Sub Unit", "Unit Price", "Total Estimate"];
         if (budgetChk) budgetChk.checked = false;
     }
 
@@ -1547,7 +1654,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (isMatch && rows[i].dataset.group) visibleGroups.add(rows[i].dataset.group);
         }
 
-        // Hide empty group headers while filtering
         for (let i = 0; i < rows.length; i++) {
             if (!rows[i].classList.contains('group-header-row')) continue;
             const gKey = rows[i].dataset.groupHeader;
