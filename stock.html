@@ -32,7 +32,7 @@
         .modal-table th { white-space: nowrap; font-size: 0.8rem; }
         .modal-table td { vertical-align: middle; font-size: 0.85rem; }
 
-        /* Procurement Modal Acquisition Grouping Colors (matches Requirement List) */
+        /* Procurement Modal Acquisition Grouping Colors */
         .proc-group-header td { padding: 7px 12px !important; font-weight: 700; font-size: 0.84rem; }
         .proc-group-pending td  { background-color: #e9ecef !important; color: #212529; }
         .proc-group-partly td   { background-color: #ffeeba !important; color: #664d03; }
@@ -105,7 +105,7 @@
                             <th style="width:28%;">Item &amp; Specification</th>
                             <th style="width:26%;">Latest Acquirement / Deduction</th>
                             <th style="width:16%;">Stock Qty</th>
-                            <th style="width:10%;">Sub Qty / Unit</th>
+                            <th style="width:10%;">Sub Qty / Sub Unit</th>
                             <th style="width:10%;">Threshold</th>
                             <th style="width:10%;" class="text-center">Actions</th>
                         </tr>
@@ -130,11 +130,19 @@
       </div>
       <div class="modal-body">
           <div class="row g-2 align-items-end mb-3">
-              <div class="col-md-4">
+              <div class="col-md-3">
                   <label class="form-label fw-bold small mb-1">Select Requirement List</label>
                   <select id="reqListDropdown" class="form-select form-select-sm fw-bold" onchange="loadReqListForProcurement()"></select>
               </div>
-              <div class="col-md-8 d-flex justify-content-md-end gap-2 flex-wrap">
+              <div class="col-md-3">
+                  <label class="form-label fw-bold small mb-1">Search Requirements</label>
+                  <div class="input-group input-group-sm">
+                      <span class="input-group-text"><i class="bi bi-search"></i></span>
+                      <input type="text" id="procSearchInput" class="form-control" placeholder="Search item, specs, vendor..." oninput="renderProcModalRows()">
+                      <button class="btn btn-outline-secondary" type="button" onclick="clearProcSearch()" title="Clear search"><i class="bi bi-x"></i></button>
+                  </div>
+              </div>
+              <div class="col-md-6 d-flex justify-content-md-end gap-2 flex-wrap">
                   <button class="btn btn-sm btn-outline-success fw-semibold" id="btnToggleProcAcquired" onclick="toggleShowProcAcquired()" style="display:none;">
                       <i class="bi bi-eye"></i> Show Acquired (<span id="procAcquiredCount">0</span>)
                   </button>
