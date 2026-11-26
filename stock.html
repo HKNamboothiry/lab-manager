@@ -31,6 +31,16 @@
         .login-card { background: rgba(255,255,255,0.9); padding: 36px; border-radius: 16px; width: 100%; max-width: 390px; box-shadow: 0 12px 32px rgba(0,0,0,0.08); }
         .modal-table th { white-space: nowrap; font-size: 0.8rem; }
         .modal-table td { vertical-align: middle; font-size: 0.85rem; }
+
+        /* Procurement Modal Acquisition Grouping Colors (matches Requirement List) */
+        .proc-group-header td { padding: 7px 12px !important; font-weight: 700; font-size: 0.84rem; }
+        .proc-group-pending td  { background-color: #e9ecef !important; color: #212529; }
+        .proc-group-partly td   { background-color: #ffeeba !important; color: #664d03; }
+        .proc-group-acquired td { background-color: #d1e7dd !important; color: #0f5132; }
+
+        .proc-row-pending td  { background-color: #ffffff !important; }
+        .proc-row-partly td   { background-color: #fffbe6 !important; }
+        .proc-row-acquired td { background-color: #edf7f0 !important; }
     </style>
 </head>
 <body>
@@ -125,6 +135,9 @@
                   <select id="reqListDropdown" class="form-select form-select-sm fw-bold" onchange="loadReqListForProcurement()"></select>
               </div>
               <div class="col-md-8 d-flex justify-content-md-end gap-2 flex-wrap">
+                  <button class="btn btn-sm btn-outline-success fw-semibold" id="btnToggleProcAcquired" onclick="toggleShowProcAcquired()" style="display:none;">
+                      <i class="bi bi-eye"></i> Show Acquired (<span id="procAcquiredCount">0</span>)
+                  </button>
                   <button class="btn btn-sm btn-outline-dark" onclick="sortProcRows('vendor_item')"><i class="bi bi-sort-alpha-down"></i> Sort: Vendor → Item</button>
                   <button class="btn btn-sm btn-outline-dark" onclick="sortProcRows('vendor')"><i class="bi bi-sort-alpha-down"></i> Sort: Vendor</button>
                   <button class="btn btn-sm btn-outline-dark" onclick="sortProcRows('item')"><i class="bi bi-sort-alpha-down"></i> Sort: Item</button>
