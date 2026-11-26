@@ -43,7 +43,7 @@
         .group-acquired td { background-color: #d1e7dd !important; color: #0f5132; }
         .group-partly td   { background-color: #ffeeba !important; color: #664d03; }
 
-        /* Group Row Background Colors (applies to both regular and sticky frozen columns) */
+        /* Group Row Background Colors */
         tbody tr[data-group="toAcquire"]:not(.table-warning) td { background-color: #ffffff; }
         tbody tr[data-group="toAcquire"]:not(.table-warning):hover td { background-color: var(--cell-hover); }
 
@@ -63,6 +63,7 @@
         .inv-ref-line { max-width: 300px; }
 
         .number-box { width: 85px; padding: 0.25rem; }
+        .sub-unit-box { width: 95px; padding: 0.25rem; }
         .vendor-cell { min-width: 155px; }
         #invTable thead th { position: static; z-index: auto; background-color: #e9ecef !important; color: #000; }
 
@@ -195,7 +196,7 @@
                           <th>Type</th>
                           <th>Item & Specs</th>
                           <th>Details / Source</th>
-                          <th>Unit / Sub Qty</th>
+                          <th>Unit / Sub Qty / Sub Unit</th>
                           <th style="width:110px;">Qty to Add</th>
                           <th class="text-center">Action</th>
                       </tr>
@@ -244,10 +245,11 @@
         <div class="mb-2"><label class="form-label small">Reference Link</label><input type="text" id="editRefLink" class="form-control fst-italic" style="font-size: 10pt;" placeholder="https://... (optional)"></div>
         <div class="mb-2"><label class="form-label small">Preferred Company</label><input type="text" id="editComp" class="form-control" placeholder="Any" oninput="toggleModalCode()"></div>
         <div class="mb-2"><label class="form-label small">Product Code</label><input type="text" id="editCode" class="form-control" disabled></div>
-        <div class="row mb-2">
-            <div class="col"><label class="form-label small">Unit</label><input type="text" id="editUnit" class="form-control" oninput="toggleModalSubQty()"></div>
-            <div class="col"><label class="form-label small">Sub Qty / Pack</label><input type="text" id="editSubQty" class="form-control" placeholder="e.g. 100 pcs" disabled></div>
-            <div class="col"><label class="form-label small">Est. Price</label><input type="number" step="0.01" id="editPrice" class="form-control"></div>
+        <div class="row g-2 mb-2">
+            <div class="col-3"><label class="form-label small">Unit</label><input type="text" id="editUnit" class="form-control" oninput="toggleModalSubQty()"></div>
+            <div class="col-3"><label class="form-label small">Sub Qty</label><input type="number" step="any" min="0" id="editSubQty" class="form-control" placeholder="100" disabled></div>
+            <div class="col-3"><label class="form-label small">Sub Unit</label><input type="text" id="editSubUnit" class="form-control" placeholder="Piece / mL" disabled></div>
+            <div class="col-3"><label class="form-label small">Est. Price</label><input type="number" step="0.01" id="editPrice" class="form-control"></div>
         </div>
       </div>
       <div class="modal-footer"><button class="btn btn-success w-100" onclick="submitProductEdit()"><i class="bi bi-floppy"></i> Save to DB</button></div>
@@ -262,7 +264,7 @@
         <input type="text" id="invSearch" class="form-control mb-3" placeholder="Search Database (e.g. Borosil Beaker 5mL)...">
         <div class="table-responsive" style="max-height: 50vh;">
             <table class="table table-sm table-bordered" id="invTable">
-                <thead class="table-secondary"><tr><th>Item</th><th>Specs</th><th>Pref. Company</th><th>Code</th><th>Unit</th><th>Sub Qty</th><th>Est. Price</th><th>Action</th></tr></thead>
+                <thead class="table-secondary"><tr><th>Item</th><th>Specs</th><th>Pref. Company</th><th>Code</th><th>Unit</th><th>Sub Qty</th><th>Sub Unit</th><th>Est. Price</th><th>Action</th></tr></thead>
                 <tbody id="invBody"></tbody>
             </table>
         </div>
