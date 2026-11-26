@@ -11,6 +11,11 @@ let latestInheritedBudget = 0;
 let currentExportType = "";
 let collapsedGroups = { acquired: false, partly: false, toAcquire: false };
 
+// Procurement Summary state
+let summaryExpenses = [];
+let cachedStockForSummary = [];
+let cachedLedgerForSummary = [];
+
 const BASE_HEADERS = [
     "SL No", "Item", "Item Specs", "Reference Link", "Preferred Company", "Product Code",
     "Required Quantity", "Unit", "Sub Quantity", "Sub Unit",
@@ -80,9 +85,7 @@ function buildUnitOptions(selectedUnit) {
 }
 
 function buildSubUnitOptions(selectedSubUnit, disabledFlag = false) {
-    if (disabledFlag) {
-        return `<option value="" selected>-</option>`;
-    }
+    if (disabledFlag) return `<option value="" selected>-</option>`;
     const curr = (selectedSubUnit || "Piece").trim();
     const units = [...DEFAULT_SUB_UNITS];
     if (curr && !units.some(u => u.toLowerCase() === curr.toLowerCase())) units.unshift(curr);
@@ -521,7 +524,6 @@ function renderTable() {
     let acquiredCount = 0;
     let savedCount = 0;
 
-    // Partition rows into the 3 acquisition groups while preserving each row's true index (i)
     const buckets = { toAcquire: [], acquired: [], partly: [] };
     currentListData.forEach((row, i) => {
         const reqQty = parseFloat(row['Required Quantity']) || 0;
@@ -535,7 +537,6 @@ function renderTable() {
         buckets[key].push({ row, i });
     });
 
-    // Display order: Items to Acquire (colourless) -> Acquired Items (pale green) -> Partly Acquired Items (pale yellow)
     const groupDefs = [
         { key: 'toAcquire', label: 'Items to Acquire',      css: 'group-pending' },
         { key: 'acquired',  label: 'Acquired Items',        css: 'group-acquired' },
@@ -1343,7 +1344,7 @@ async function deleteUser(username) {
 }
 
 // -------------------------------------------------------------
-// EXPORT MODULE
+// STANDARD EXPORT MODULE (Excel, CSV, PDF, Print)
 // -------------------------------------------------------------
 function openExportModal(type) {
     currentExportType = type;
@@ -1592,6 +1593,625 @@ function executeExport() {
         html += `</body></html>`;
         win.document.write(html); win.document.close(); win.print();
     }
+}
+
+// -------------------------------------------------------------
+// PROCUREMENT SUMMARY REPORT & SAVED ADDITIONAL EXPENSES
+// -------------------------------------------------------------
+function formatNowTimestamp() {
+    const d = new Date();
+    const pad = n => String(n).padStart(2, '0');
+    return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+function getRowUnitPrice(row) {
+    const sv = (row['Selected Vendor'] || '').trim();
+    if (sv && row[sv] !== undefined && row[sv] !== '' && row[sv] !== 'NA') {
+        const p = parseFloat(row[sv]);
+        if (!isNaN(p)) return p;
+    }
+    const est = parseFloat(row['Estimated Price']);
+    return isNaN(est) ? 0 : est;
+}
+
+function computeProcurementSubTotal() {
+    const cleanRows = currentListData.filter(r => !r._isEditing);
+    return cleanRows.reduce((sum, r) => {
+        const reqQty = parseFloat(r['Required Quantity']) || 0;
+        const unitPrice = getRowUnitPrice(r);
+        return sum + (reqQty * unitPrice);
+    }, 0);
+}
+
+function computeAdditionalExpensesTotal() {
+    return summaryExpenses.reduce((sum, exp) => sum + (parseFloat(exp.amount) || 0), 0);
+}
+
+function updateSummaryTotalsPreview() {
+    const subTotal = computeProcurementSubTotal();
+    const grandTotal = subTotal + computeAdditionalExpensesTotal();
+    const subEl = document.getElementById('sumSubTotal');
+    const grandEl = document.getElementById('sumGrandTotalPreview');
+    if (subEl) subEl.innerText = '₹' + subTotal.toFixed(2);
+    if (grandEl) grandEl.innerText = '₹' + grandTotal.toFixed(2);
+}
+
+function renderExpenseRows() {
+    const container = document.getElementById('additionalExpensesList');
+    if (!container) return;
+    if (summaryExpenses.length === 0) {
+        container.innerHTML = `<div class="text-muted small fst-italic border rounded p-2">No additional expenses added. Click buttons above to add transportation, processing, marketplace fees, etc.</div>`;
+        updateSummaryTotalsPreview();
+        return;
+    }
+    container.innerHTML = summaryExpenses.map((exp, idx) => `
+        <div class="input-group input-group-sm mb-2">
+            <input type="text" class="form-control" placeholder="Expense description (e.g., Transportation charges)" value="${esc(exp.label)}" oninput="summaryExpenses[${idx}].label = this.value">
+            <span class="input-group-text">₹</span>
+            <input type="number" step="0.01" min="0" class="form-control" style="max-width:140px;" placeholder="0.00" value="${esc(exp.amount)}" oninput="summaryExpenses[${idx}].amount = this.value; updateSummaryTotalsPreview();">
+            <button type="button" class="btn btn-outline-danger" onclick="removeExpenseRow(${idx})" title="Remove"><i class="bi bi-trash"></i></button>
+        </div>
+    `).join('');
+    updateSummaryTotalsPreview();
+}
+
+function addExpenseRow(defaultLabel = "") {
+    summaryExpenses.push({ label: defaultLabel, amount: "" });
+    renderExpenseRows();
+}
+
+function removeExpenseRow(idx) {
+    summaryExpenses.splice(idx, 1);
+    renderExpenseRows();
+}
+
+async function openProcurementSummaryModal() {
+    const listName = document.getElementById('listSelector').value;
+    if (!listName) return alert("Please select a requirement list first.");
+
+    const listMeta = getCurrentListMeta();
+    document.getElementById('sumListName').innerText = listName;
+    document.getElementById('sumPreparedBy').innerText = `${USER.username} (${USER.role})`;
+
+    // Load saved Additional Expenses from List_Meta
+    try {
+        const rawExp = listMeta && listMeta.additionalExpenses ? listMeta.additionalExpenses : "[]";
+        summaryExpenses = Array.isArray(rawExp) ? rawExp : JSON.parse(rawExp);
+        if (!Array.isArray(summaryExpenses)) summaryExpenses = [];
+    } catch (e) {
+        summaryExpenses = [];
+    }
+
+    const cleanRows = currentListData.filter(r => !r._isEditing);
+    const procDates = cleanRows.map(r => (r['Date of Procurement'] || '').trim()).filter(Boolean);
+    const lastProcGuess = procDates.length > 0 ? procDates[procDates.length - 1] : "";
+
+    document.getElementById('sumListCreatedDate').value = (listMeta && listMeta.createdDate) ? listMeta.createdDate : "";
+    document.getElementById('sumLastProcDate').value = lastProcGuess;
+
+    renderExpenseRows();
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('procSummaryModal')).show();
+
+    try {
+        const stRes = await apiPost({ action: "getStockData", username: USER.username, role: USER.role });
+        if (stRes.status === "success") {
+            cachedStockForSummary = stRes.stock || [];
+            cachedLedgerForSummary = stRes.ledger || [];
+        }
+    } catch (e) {}
+}
+
+async function saveProcurementExpenses(showAlert = false) {
+    const listName = document.getElementById('listSelector').value;
+    if (!listName) return;
+
+    const cleanExpenses = summaryExpenses
+        .map(e => ({ label: (e.label || "").trim(), amount: e.amount !== "" ? (parseFloat(e.amount) || 0) : "" }))
+        .filter(e => e.label !== "" || (e.amount !== "" && e.amount > 0));
+
+    const createdDateVal = (document.getElementById('sumListCreatedDate').value || "").trim();
+    const btn = document.getElementById('btnSaveExpenses');
+    if (btn && showAlert) { btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Saving...'; btn.disabled = true; }
+
+    try {
+        const payload = {
+            action: "manageList",
+            subAction: "updateMeta",
+            listName: listName,
+            additionalExpenses: cleanExpenses
+        };
+        if (createdDateVal) payload.createdDate = createdDateVal;
+        await apiPost(payload);
+
+        const meta = getCurrentListMeta();
+        if (meta) {
+            meta.additionalExpenses = JSON.stringify(cleanExpenses);
+            if (createdDateVal) meta.createdDate = createdDateVal;
+        }
+        if (showAlert) alert("Additional expenses saved to Google Sheets.");
+    } catch (e) {
+        if (showAlert) alert("Failed to save expenses.");
+    } finally {
+        if (btn && showAlert) { btn.innerHTML = '<i class="bi bi-floppy"></i> Save Expenses'; btn.disabled = false; }
+    }
+}
+
+function buildParticularText(itemName, specs, prefComp, code, refLink) {
+    const parts = [];
+    if (itemName) parts.push(`<strong>${esc(itemName)}</strong>`);
+    if (specs) parts.push(`<div>${esc(specs)}</div>`);
+    if (prefComp || code) {
+        const compStr = prefComp || "Any";
+        const codeStr = code ? ` [${esc(code)}]` : "";
+        parts.push(`<div><strong>Preferred company:</strong> ${esc(compStr)}${codeStr}</div>`);
+    }
+    if (refLink) {
+        parts.push(`<div class="fst-italic" style="font-size:10pt;">${esc(refLink)}</div>`);
+    }
+    return parts.join("");
+}
+
+function buildParticularPlain(itemName, specs, prefComp, code, refLink) {
+    const lines = [];
+    if (itemName) lines.push(itemName);
+    if (specs) lines.push(specs);
+    if (prefComp || code) {
+        lines.push(`Preferred company: ${prefComp || "Any"}${code ? ` [${code}]` : ""}`);
+    }
+    if (refLink) {
+        lines.push(truncateSingleLineText(refLink, 55));
+    }
+    return lines.join("\n");
+}
+
+function buildProcurementReportModel() {
+    const listName = document.getElementById('listSelector').value || "";
+    const nowStr = formatNowTimestamp();
+    const preparedBy = `${USER.username} (${USER.role})`;
+
+    const createdOverride = (document.getElementById('sumListCreatedDate').value || "").trim();
+    const lastProcOverride = (document.getElementById('sumLastProcDate').value || "").trim();
+
+    const cleanRows = currentListData.filter(r => !r._isEditing);
+    const ledgerListDates = cachedLedgerForSummary
+        .filter(l => l.sourceList === listName && l.type === "Acquirement" && l.dateTime)
+        .map(l => l.dateTime);
+    const rowProcDates = cleanRows.map(r => (r['Date of Procurement'] || '').trim()).filter(Boolean);
+    const lastProcDate = lastProcOverride || (ledgerListDates.length ? ledgerListDates[ledgerListDates.length - 1] : (rowProcDates.length ? rowProcDates[rowProcDates.length - 1] : "N/A"));
+    const createdDate = createdOverride || "N/A";
+
+    let hasIncompleteItem = false;
+    let subTotal = 0;
+
+    const procTableRows = cleanRows.map((row, idx) => {
+        const itemName = String(row['Item'] || '').trim();
+        const specs = String(row['Item Specs'] || '').trim();
+        const prefComp = String(row['Preferred Company'] || '').trim();
+        const code = String(row['Product Code'] || '').trim();
+        const refLink = String(row['Reference Link'] || '').trim();
+
+        const reqQty = parseFloat(row['Required Quantity']) || 0;
+        const unit = String(row['Unit'] || 'Piece').trim();
+        const subQty = String(row['Sub Quantity'] || '').trim();
+        const subUnit = String(row['Sub Unit'] || '').trim();
+
+        const acqQty = parseFloat(row['Acquired Qty']) || 0;
+        const acqSubQty = String(row['Acquired Sub Qty'] || '').trim();
+        const acqSubUnit = String(row['Acquired Sub Unit'] || '').trim();
+
+        const isIncomplete = reqQty > 0 ? (acqQty < reqQty) : (acqQty === 0);
+        if (isIncomplete) hasIncompleteItem = true;
+        const star = isIncomplete ? "*" : "";
+
+        const vendor = String(row['Selected Vendor'] || '').trim();
+        const billNo = String(row['Bill Ref No'] || '').trim();
+        const unitAmt = getRowUnitPrice(row);
+        const rowAmt = reqQty * unitAmt;
+        subTotal += rowAmt;
+
+        const reqSubLine = (!isPieceUnit(unit) && subQty && subUnit) ? `${subQty} ${subUnit}/${unit}` : "";
+        const aqSubLine = (!isPieceUnit(unit) && acqSubQty && acqSubUnit) ? `${acqSubQty} ${acqSubUnit}/${unit}` : "";
+
+        return {
+            slNo: idx + 1,
+            particularHtml: buildParticularText(itemName, specs, prefComp, code, refLink),
+            particularPlain: buildParticularPlain(itemName, specs, prefComp, code, refLink),
+            reqMain: `${reqQty} ${unit}`,
+            reqSub: reqSubLine,
+            aqMain: `${acqQty} ${unit}${star}`,
+            aqSub: aqSubLine,
+            vendorMain: vendor || "-",
+            vendorSub: billNo ? `Bill: ${billNo}` : "",
+            unitAmount: unitAmt.toFixed(2),
+            rowAmount: rowAmt.toFixed(2)
+        };
+    });
+
+    const validExpenses = summaryExpenses
+        .map(e => ({ label: (e.label || "Additional Expense").trim(), amount: parseFloat(e.amount) || 0 }))
+        .filter(e => e.amount > 0 || (e.label && e.label !== "Additional Expense"));
+
+    const expensesTotal = validExpenses.reduce((s, e) => s + e.amount, 0);
+    const grandTotal = subTotal + expensesTotal;
+
+    const budgetAmount = parseFloat(document.getElementById('budgetInHand').value) || 0;
+    const spentAmount = grandTotal;
+    const remainingAmount = budgetAmount - spentAmount;
+
+    const stockSummaryRows = cleanRows.map((row, idx) => {
+        const itemName = String(row['Item'] || '').trim();
+        const specs = String(row['Item Specs'] || '').trim();
+        const prefComp = String(row['Preferred Company'] || '').trim();
+        const code = String(row['Product Code'] || '').trim();
+        const refLink = String(row['Reference Link'] || '').trim();
+        const unit = String(row['Unit'] || 'Piece').trim();
+
+        const matchedStock = cachedStockForSummary.find(s =>
+            s.item.trim().toLowerCase() === itemName.toLowerCase() &&
+            s.specs.trim().toLowerCase() === specs.toLowerCase()
+        );
+
+        const subPerUnit = matchedStock ? (parseFloat(matchedStock.subPerUnit) || 1) : (parseFloat(row['Sub Quantity']) || 1);
+        const subLabel = matchedStock ? (matchedStock.subLabel || row['Sub Unit'] || '') : (row['Sub Unit'] || '');
+        const hasSub = !isPieceUnit(unit) && subPerUnit > 1 && subLabel;
+
+        const afterBase = matchedStock ? (parseFloat(matchedStock.totalBase) || 0) : ((parseFloat(row['Acquired Qty']) || 0) * (hasSub ? subPerUnit : 1));
+        const acqQty = parseFloat(row['Acquired Qty']) || 0;
+        const addedBase = acqQty * (hasSub ? subPerUnit : 1);
+        const beforeBase = Math.max(0, Number((afterBase - addedBase).toFixed(2)));
+
+        const beforeQty = hasSub ? Math.floor(beforeBase / subPerUnit) : beforeBase;
+        const afterQty = hasSub ? Math.floor(afterBase / subPerUnit) : afterBase;
+
+        const beforeSubStr = hasSub ? `${Number((beforeBase % subPerUnit).toFixed(2))} ${subLabel}` : "-";
+        const afterSubStr = hasSub ? `${Number((afterBase % subPerUnit).toFixed(2))} ${subLabel}` : "-";
+
+        const threshVal = matchedStock ? (parseFloat(matchedStock.threshold) || 0) : 0;
+        const threshUnit = matchedStock && matchedStock.thresholdType === 'sub' && hasSub ? subLabel : unit;
+        const thresholdDisplay = threshVal > 0 ? `${threshVal} ${threshUnit}` : null;
+
+        return {
+            slNo: idx + 1,
+            itemHtml: buildParticularText(itemName, specs, prefComp, code, refLink),
+            itemPlain: buildParticularPlain(itemName, specs, prefComp, code, refLink),
+            beforeQty: `${beforeQty} ${unit}`,
+            beforeSub: beforeSubStr,
+            afterQty: `${afterQty} ${unit}`,
+            afterSub: afterSubStr,
+            thresholdDisplay: thresholdDisplay
+        };
+    });
+
+    return {
+        labName: "DR. NIMMI DAS LAB",
+        listName,
+        createdDate,
+        lastProcDate,
+        prepDate: nowStr,
+        preparedBy,
+        procTableRows,
+        subTotal,
+        validExpenses,
+        expensesTotal,
+        grandTotal,
+        hasIncompleteItem,
+        budgetAmount,
+        spentAmount,
+        remainingAmount,
+        stockSummaryRows
+    };
+}
+
+function printProcurementSummary() {
+    const m = buildProcurementReportModel();
+    saveProcurementExpenses(false);
+
+    const modalEl = document.getElementById('procSummaryModal');
+    const inst = bootstrap.Modal.getInstance(modalEl);
+    if (inst) inst.hide();
+
+    const procRowsHtml = m.procTableRows.map(r => `
+        <tr>
+            <td class="text-center">${r.slNo}</td>
+            <td>${r.particularHtml}</td>
+            <td class="text-center">
+                <div>${esc(r.reqMain)}</div>
+                ${r.reqSub ? `<div class="fst-italic small text-muted">${esc(r.reqSub)}</div>` : ''}
+            </td>
+            <td class="text-center">
+                <div>${esc(r.aqMain)}</div>
+                ${r.aqSub ? `<div class="fst-italic small text-muted">${esc(r.aqSub)}</div>` : ''}
+            </td>
+            <td>
+                <div>${esc(r.vendorMain)}</div>
+                ${r.vendorSub ? `<div class="fst-italic small text-muted">${esc(r.vendorSub)}</div>` : ''}
+            </td>
+            <td class="text-end">₹${r.unitAmount}</td>
+            <td class="text-end">₹${r.rowAmount}</td>
+        </tr>
+    `).join('');
+
+    const expensesHtml = m.validExpenses.map(e => `
+        <tr>
+            <td colspan="6" class="text-end"><strong>${esc(e.label)}</strong></td>
+            <td class="text-end">₹${e.amount.toFixed(2)}</td>
+        </tr>
+    `).join('');
+
+    const stockRowsHtml = m.stockSummaryRows.map(s => `
+        <tr>
+            <td class="text-center">${s.slNo}</td>
+            <td>${s.itemHtml}</td>
+            <td class="text-center">${esc(s.beforeQty)}</td>
+            <td class="text-center">${esc(s.beforeSub)}</td>
+            <td class="text-center">${esc(s.afterQty)}</td>
+            <td class="text-center">${esc(s.afterSub)}</td>
+            <td class="text-center">${s.thresholdDisplay ? esc(s.thresholdDisplay) : '<span class="fst-italic text-muted">Not set</span>'}</td>
+        </tr>
+    `).join('');
+
+    const html = `<!DOCTYPE html><html><head><title>Procurement Summary - ${esc(m.listName)}</title><style>
+        body { font-family: Arial, sans-serif; color: #111; margin: 24px; font-size: 12px; }
+        .report-title { text-align: center; font-size: 20px; font-weight: 800; letter-spacing: 0.5px; margin-bottom: 4px; }
+        .report-subtitle { text-align: center; font-size: 14px; margin-bottom: 14px; }
+        .meta-grid { display: flex; justify-content: space-between; gap: 24px; font-size: 12px; margin-bottom: 10px; }
+        .meta-col { flex: 1; line-height: 1.5; }
+        .meta-col-right { text-align: right; }
+        hr.divider { border: 0; border-top: 1.5px solid #222; margin: 10px 0 16px 0; }
+        table.rep-table { width: 100%; border-collapse: collapse; margin-bottom: 14px; }
+        table.rep-table th, table.rep-table td { border: 1px solid #333; padding: 6px 8px; vertical-align: top; }
+        table.rep-table th { background: #f1f5f9; text-align: center; font-weight: 700; }
+        .text-center { text-align: center !important; }
+        .text-end { text-align: right !important; }
+        .fst-italic { font-style: italic; }
+        .small { font-size: 11px; }
+        .text-muted { color: #555; }
+        .footnote { font-style: italic; font-size: 11px; margin-top: 4px; margin-bottom: 12px; }
+        .box-summary { width: 340px; border-collapse: collapse; margin-bottom: 20px; }
+        .box-summary td { border: 1px solid #333; padding: 5px 8px; }
+        .section-heading { font-size: 14px; font-weight: 700; margin-top: 18px; margin-bottom: 8px; }
+    </style></head><body>
+        <div class="report-title">${esc(m.labName)}</div>
+        <div class="report-subtitle">REPORT OF PROCUREMENT TITLED : <em>${esc(m.listName)}</em></div>
+        <div class="meta-grid">
+            <div class="meta-col">
+                <div><strong>Date of list creation:</strong> ${esc(m.createdDate)}</div>
+                <div><strong>Last date of procurement:</strong> ${esc(m.lastProcDate)}</div>
+            </div>
+            <div class="meta-col meta-col-right">
+                <div><strong>Date of report preparation:</strong> ${esc(m.prepDate)}</div>
+                <div><strong>Prepared by:</strong> ${esc(m.preparedBy)}</div>
+            </div>
+        </div>
+        <hr class="divider">
+
+        <table class="rep-table">
+            <thead>
+                <tr>
+                    <th>Sl. No.</th>
+                    <th>Particulars</th>
+                    <th>Required Qty</th>
+                    <th>Acquired Qty</th>
+                    <th>Vendor &amp; Bill No.</th>
+                    <th>Unit Price</th>
+                    <th>Total Amount</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${procRowsHtml}
+                <tr>
+                    <td colspan="6" class="text-end"><strong>Sub Total</strong></td>
+                    <td class="text-end"><strong>₹${m.subTotal.toFixed(2)}</strong></td>
+                </tr>
+                ${expensesHtml}
+                <tr>
+                    <td colspan="6" class="text-end"><strong>Grand Total</strong></td>
+                    <td class="text-end"><strong>₹${m.grandTotal.toFixed(2)}</strong></td>
+                </tr>
+            </tbody>
+        </table>
+
+        ${m.hasIncompleteItem ? `<div class="footnote">*Not acquired completely</div>` : ''}
+
+        <table class="box-summary">
+            <tr><td colspan="2"><strong>Budget Summary</strong></td></tr>
+            <tr><td>Budget Amount</td><td class="text-end">₹${m.budgetAmount.toFixed(2)}</td></tr>
+            <tr><td>Spent Amount</td><td class="text-end">₹${m.spentAmount.toFixed(2)}</td></tr>
+            <tr><td>Remaining Amount</td><td class="text-end">₹${m.remainingAmount.toFixed(2)}</td></tr>
+        </table>
+
+        <div class="section-heading">Stock Summary</div>
+        <table class="rep-table">
+            <thead>
+                <tr>
+                    <th rowspan="2">Sl. No.</th>
+                    <th rowspan="2">Item &amp; Specifications</th>
+                    <th colspan="2">Before Purchase</th>
+                    <th colspan="2">After Purchase</th>
+                    <th rowspan="2">Threshold Qty</th>
+                </tr>
+                <tr>
+                    <th>Qty</th>
+                    <th>Sub Qty &amp; Unit</th>
+                    <th>Qty</th>
+                    <th>Sub Qty &amp; Unit</th>
+                </tr>
+            </thead>
+            <tbody>${stockRowsHtml}</tbody>
+        </table>
+    </body></html>`;
+
+    const win = window.open('', '', 'width=1024,height=720');
+    win.document.write(html);
+    win.document.close();
+    win.focus();
+    win.print();
+}
+
+function downloadProcurementSummaryPdf() {
+    const m = buildProcurementReportModel();
+    saveProcurementExpenses(false);
+
+    const modalEl = document.getElementById('procSummaryModal');
+    const inst = bootstrap.Modal.getInstance(modalEl);
+    if (inst) inst.hide();
+
+    const doc = new jspdf.jsPDF('landscape');
+    const pageW = doc.internal.pageSize.getWidth();
+
+    doc.setFontSize(16);
+    doc.setFont(undefined, 'bold');
+    doc.text(m.labName, pageW / 2, 14, { align: 'center' });
+
+    doc.setFontSize(11);
+    doc.setFont(undefined, 'normal');
+    const subPrefix = "REPORT OF PROCUREMENT TITLED : ";
+    const titleItalic = m.listName;
+    const totalSubW = doc.getTextWidth(subPrefix) + doc.getTextWidth(titleItalic);
+    const startSubX = (pageW - totalSubW) / 2;
+    doc.text(subPrefix, startSubX, 21);
+    doc.setFont(undefined, 'italic');
+    doc.text(titleItalic, startSubX + doc.getTextWidth(subPrefix), 21);
+    doc.setFont(undefined, 'normal');
+
+    doc.setFontSize(9.5);
+    doc.setFont(undefined, 'bold');
+    doc.text("Date of list creation:", 14, 29);
+    doc.setFont(undefined, 'normal');
+    doc.text(m.createdDate, 54, 29);
+
+    doc.setFont(undefined, 'bold');
+    doc.text("Last date of procurement:", 14, 34);
+    doc.setFont(undefined, 'normal');
+    doc.text(m.lastProcDate, 62, 34);
+
+    doc.setFont(undefined, 'bold');
+    doc.text("Date of report preparation:", pageW - 95, 29);
+    doc.setFont(undefined, 'normal');
+    doc.text(m.prepDate, pageW - 44, 29);
+
+    doc.setFont(undefined, 'bold');
+    doc.text("Prepared by:", pageW - 95, 34);
+    doc.setFont(undefined, 'normal');
+    doc.text(m.preparedBy, pageW - 69, 34);
+
+    doc.setLineWidth(0.5);
+    doc.line(14, 38, pageW - 14, 38);
+
+    const procBody = m.procTableRows.map(r => [
+        r.slNo,
+        r.particularPlain,
+        r.reqSub ? `${r.reqMain}\n${r.reqSub}` : r.reqMain,
+        r.aqSub ? `${r.aqMain}\n${r.aqSub}` : r.aqMain,
+        r.vendorSub ? `${r.vendorMain}\n${r.vendorSub}` : r.vendorMain,
+        `Rs. ${r.unitAmount}`,
+        `Rs. ${r.rowAmount}`
+    ]);
+
+    procBody.push([
+        { content: "Sub Total", colSpan: 6, styles: { halign: 'right', fontStyle: 'bold' } },
+        { content: `Rs. ${m.subTotal.toFixed(2)}`, styles: { halign: 'right', fontStyle: 'bold' } }
+    ]);
+
+    m.validExpenses.forEach(e => {
+        procBody.push([
+            { content: e.label, colSpan: 6, styles: { halign: 'right', fontStyle: 'bold' } },
+            { content: `Rs. ${e.amount.toFixed(2)}`, styles: { halign: 'right' } }
+        ]);
+    });
+
+    procBody.push([
+        { content: "Grand Total", colSpan: 6, styles: { halign: 'right', fontStyle: 'bold', fillColor: [240, 244, 248] } },
+        { content: `Rs. ${m.grandTotal.toFixed(2)}`, styles: { halign: 'right', fontStyle: 'bold', fillColor: [240, 244, 248] } }
+    ]);
+
+    doc.autoTable({
+        head: [["Sl. No.", "Particulars", "Required Qty", "Acquired Qty", "Vendor & Bill No.", "Unit Price", "Total Amount"]],
+        body: procBody,
+        startY: 42,
+        styles: { fontSize: 8, cellPadding: 2.5, valign: 'top' },
+        headStyles: { fillColor: [33, 37, 41], halign: 'center' },
+        columnStyles: {
+            0: { halign: 'center', cellWidth: 14 },
+            1: { cellWidth: 85 },
+            2: { halign: 'center', cellWidth: 36 },
+            3: { halign: 'center', cellWidth: 36 },
+            4: { cellWidth: 42 },
+            5: { halign: 'right', cellWidth: 28 },
+            6: { halign: 'right', cellWidth: 28 }
+        }
+    });
+
+    let curY = doc.lastAutoTable.finalY + 6;
+    if (m.hasIncompleteItem) {
+        doc.setFontSize(8.5);
+        doc.setFont(undefined, 'italic');
+        doc.text("*Not acquired completely", 14, curY);
+        doc.setFont(undefined, 'normal');
+        curY += 6;
+    }
+
+    doc.autoTable({
+        head: [[{ content: "Budget Summary", colSpan: 2 }]],
+        body: [
+            ["Budget Amount", `Rs. ${m.budgetAmount.toFixed(2)}`],
+            ["Spent Amount", `Rs. ${m.spentAmount.toFixed(2)}`],
+            ["Remaining Amount", `Rs. ${m.remainingAmount.toFixed(2)}`]
+        ],
+        startY: curY,
+        tableWidth: 95,
+        styles: { fontSize: 8, cellPadding: 2 },
+        headStyles: { fillColor: [55, 65, 81] },
+        columnStyles: { 1: { halign: 'right' } }
+    });
+
+    curY = doc.lastAutoTable.finalY + 8;
+    doc.setFontSize(11);
+    doc.setFont(undefined, 'bold');
+    doc.text("Stock Summary", 14, curY);
+
+    const stockBody = m.stockSummaryRows.map(s => [
+        s.slNo,
+        s.itemPlain,
+        s.beforeQty,
+        s.beforeSub,
+        s.afterQty,
+        s.afterSub,
+        s.thresholdDisplay || "Not set"
+    ]);
+
+    doc.autoTable({
+        head: [
+            [
+                { content: "Sl. No.", rowSpan: 2, styles: { valign: 'middle' } },
+                { content: "Item & Specifications", rowSpan: 2, styles: { valign: 'middle' } },
+                { content: "Before Purchase", colSpan: 2 },
+                { content: "After Purchase", colSpan: 2 },
+                { content: "Threshold Qty", rowSpan: 2, styles: { valign: 'middle' } }
+            ],
+            ["Qty", "Sub Qty & Unit", "Qty", "Sub Qty & Unit"]
+        ],
+        body: stockBody,
+        startY: curY + 3,
+        styles: { fontSize: 8, cellPadding: 2.2, valign: 'top' },
+        headStyles: { fillColor: [33, 37, 41], halign: 'center' },
+        columnStyles: {
+            0: { halign: 'center', cellWidth: 14 },
+            1: { cellWidth: 95 },
+            2: { halign: 'center', cellWidth: 26 },
+            3: { halign: 'center', cellWidth: 34 },
+            4: { halign: 'center', cellWidth: 26 },
+            5: { halign: 'center', cellWidth: 34 },
+            6: { halign: 'center', cellWidth: 34 }
+        },
+        didParseCell: function(data) {
+            if (data.section === 'body' && data.column.index === 6 && data.cell.raw === "Not set") {
+                data.cell.styles.fontStyle = 'italic';
+            }
+        }
+    });
+
+    doc.save(`${m.listName || "Procurement"}_Summary.pdf`);
 }
 
 // -------------------------------------------------------------
