@@ -205,7 +205,6 @@ async function handleListChange() {
             if (res.status === "error") return alert(res.message);
             document.getElementById('listSelector').setAttribute('data-curr', newName);
             await fetchInitData();
-            // Prompt alerts automatically on newly created list if any exist
             const activeAlerts = getRelevantAlertsForCurrentList();
             if (activeAlerts.unacquired.length > 0 || activeAlerts.lowStock.length > 0) {
                 openAlertsModal();
@@ -258,11 +257,9 @@ function getRelevantAlertsForCurrentList() {
     const meta = getCurrentListMeta();
     const dismissed = (meta && meta.dismissedAlerts) ? meta.dismissedAlerts : [];
 
-    // Exclude items from the current list itself, or already dismissed in this list
     const unacquired = (globalAlerts.unacquired || []).filter(a =>
         a.sourceList !== currList && !dismissed.includes(a.alertKey)
     );
-    // Show low stock items that are not yet marked PLACED and not dismissed in this list
     const lowStock = (globalAlerts.lowStock || []).filter(a =>
         a.reqStatus !== "PLACED" && !dismissed.includes(a.alertKey)
     );
@@ -353,7 +350,6 @@ async function addAlertItemToList(type, idx) {
     const qtyInput = document.getElementById(type === 'unacq' ? `alertUnacqQty_${idx}` : `alertLowQty_${idx}`);
     const qtyToAdd = parseFloat(qtyInput.value) || 1;
 
-    // Check if the same Item + Specs already exists in this list -> increase quantity
     const existingIdx = currentListData.findIndex(r =>
         !r._isEditing &&
         String(r['Item'] || '').trim().toLowerCase() === item.item.trim().toLowerCase() &&
@@ -387,14 +383,12 @@ async function addAlertItemToList(type, idx) {
         currentListData.push(newRow);
     }
 
-    // Dismiss alert on current list so it doesn't show twice
     await apiPost({
         action: "manageList", subAction: "dismissAlert",
         listName: document.getElementById('listSelector').value,
         alertKey: item.alertKey
     });
 
-    // If low-stock item, mark PLACED in Stock Register
     if (type === 'lowstk' && item.stockId) {
         await apiPost({ action: "markStockReqPlaced", stockId: item.stockId });
     }
@@ -504,7 +498,7 @@ function renderTable() {
     let savedCount = 0;
 
     // Partition rows into the 3 acquisition groups while preserving each row's true index (i)
-    const buckets = { acquired: [], partly: [], toAcquire: [] };
+    const buckets = { toAcquire: [], acquired: [], partly: [] };
     currentListData.forEach((row, i) => {
         const reqQty = parseFloat(row['Required Quantity']) || 0;
         const acqQty = parseFloat(row['Acquired Qty']) || 0;
@@ -517,10 +511,11 @@ function renderTable() {
         buckets[key].push({ row, i });
     });
 
+    // Display order: Items to Acquire (colourless) -> Acquired Items (pale green) -> Partly Acquired Items (pale yellow)
     const groupDefs = [
+        { key: 'toAcquire', label: 'Items to Acquire',      css: 'group-pending' },
         { key: 'acquired',  label: 'Acquired Items',        css: 'group-acquired' },
-        { key: 'partly',    label: 'Partly Acquired Items', css: 'group-partly' },
-        { key: 'toAcquire', label: 'Items to Acquire',      css: 'group-pending' }
+        { key: 'partly',    label: 'Partly Acquired Items', css: 'group-partly' }
     ];
 
     // Show group headers only when Acquired or Partly Acquired items exist; skip any empty group
