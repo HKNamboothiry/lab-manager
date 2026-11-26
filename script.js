@@ -9,6 +9,7 @@ let vendorDB = [];
 let globalAlerts = { unacquired: [], lowStock: [] };
 let latestInheritedBudget = 0;
 let currentExportType = "";
+let collapsedGroups = { acquired: false, partly: false, toAcquire: false };
 
 const BASE_HEADERS = [
     "SL No", "Item", "Item Specs", "Reference Link", "Preferred Company", "Product Code",
@@ -191,6 +192,7 @@ function populateListDropdown() {
 async function handleListChange() {
     const val = document.getElementById('listSelector').value;
     document.getElementById('listSelector').setAttribute('data-curr', val);
+    collapsedGroups = { acquired: false, partly: false, toAcquire: false };
 
     if (val === "_NEW_") {
         const today = new Date().toISOString().split('T')[0];
@@ -362,6 +364,7 @@ async function addAlertItemToList(type, idx) {
         const curQty = parseFloat(currentListData[existingIdx]['Required Quantity']) || 0;
         currentListData[existingIdx]['Required Quantity'] = curQty + qtyToAdd;
     } else {
+        collapsedGroups.toAcquire = false;
         let newRow = {
             'Item': item.item,
             'Item Specs': item.specs || '',
@@ -444,7 +447,7 @@ async function reopenCurrentList() {
 }
 
 // -------------------------------------------------------------
-// MAIN TABLE RENDERING
+// MAIN TABLE RENDERING (WITH COLLAPSIBLE ACQUISITION GROUPS)
 // -------------------------------------------------------------
 function toggleCode(elem) {
     const tr = elem.closest('tr');
@@ -456,6 +459,19 @@ function toggleCode(elem) {
     } else {
         codeInput.disabled = false;
     }
+}
+
+function getRowGroupKey(row) {
+    const req = parseFloat(row['Required Quantity']) || 0;
+    const acq = parseFloat(row['Acquired Qty']) || 0;
+    if (req > 0 && acq >= req) return 'acquired';
+    if (acq > 0 && acq < req) return 'partly';
+    return 'toAcquire';
+}
+
+function toggleGroup(groupKey) {
+    collapsedGroups[groupKey] = !collapsedGroups[groupKey];
+    renderTable();
 }
 
 function renderTable() {
@@ -483,115 +499,156 @@ function renderTable() {
     </tr>`;
 
     const tbody = document.getElementById('tableBody');
-    let rowsHTML = "";
     let total = 0;
     let acquiredCount = 0;
     let savedCount = 0;
 
+    // Partition rows into the 3 acquisition groups while preserving each row's true index (i)
+    const buckets = { acquired: [], partly: [], toAcquire: [] };
     currentListData.forEach((row, i) => {
         const reqQty = parseFloat(row['Required Quantity']) || 0;
         const acqQty = parseFloat(row['Acquired Qty']) || 0;
-        const totalEst = parseFloat(row['Total Estimate']) || 0;
-        const unitVal = row['Unit'] || 'Piece';
-        const pieceFlag = isPieceUnit(unitVal);
-
         if (!row._isEditing) {
             savedCount++;
             if (reqQty > 0 && acqQty >= reqQty) acquiredCount++;
-            total += totalEst;
-            let selVendor = row['Selected Vendor'] || '';
-            let acqBadgeClass = acqQty >= reqQty && reqQty > 0 ? 'text-success fw-bold' : (acqQty > 0 ? 'text-warning fw-bold' : 'text-muted');
+            total += (parseFloat(row['Total Estimate']) || 0);
+        }
+        const key = row._isNew ? 'toAcquire' : getRowGroupKey(row);
+        buckets[key].push({ row, i });
+    });
 
-            let vendorCells = activeVendors.map(v => {
-                let vPrice = row[v] ?? '';
-                let isNA = vPrice === 'NA';
-                let isChecked = (selVendor === v) ? 'checked' : '';
-                let valToDisplay = isNA ? '' : vPrice;
-                let safeV = v.replace(/'/g, "\\'");
-                return `<td class="vendor-cell">
-                    <div class="d-flex align-items-center gap-1">
-                        <input type="radio" name="vSelect_${i}" value="${esc(v)}" onchange="selectVendor(${i}, '${safeV}')" ${isChecked} ${(isNA || closed) ? 'disabled' : ''}>
-                        <input type="number" step="0.01" class="form-control form-control-sm" style="width: 75px;" placeholder="Price" value="${esc(valToDisplay)}" onchange="updateVendorPrice(${i}, '${safeV}', this.value)" ${(isNA || closed) ? 'disabled' : ''}>
-                        <button class="btn btn-sm btn-outline-danger py-0 px-1 fw-bold" onclick="toggleVendorNA(${i}, '${safeV}')" title="Mark NA" ${closed ? 'disabled' : ''}>🚫</button>
-                    </div>
-                </td>`;
-            }).join('');
+    const groupDefs = [
+        { key: 'acquired',  label: 'Acquired Items',        css: 'group-acquired' },
+        { key: 'partly',    label: 'Partly Acquired Items', css: 'group-partly' },
+        { key: 'toAcquire', label: 'Items to Acquire',      css: 'group-pending' }
+    ];
 
-            rowsHTML += `<tr>
-                <td class="sticky-col-0">${i + 1}</td>
-                <td class="sticky-col-1 text-center text-nowrap">
-                    <button class="btn btn-sm btn-outline-primary py-0 px-1" onclick="editRow(${i})" title="Edit" ${closed ? 'disabled' : ''}><i class="bi bi-pencil-square"></i></button>
-                    <button class="btn btn-sm btn-outline-secondary py-0 px-1 ms-1" onclick="duplicateRow(${i})" title="Duplicate Row" ${closed ? 'disabled' : ''}><i class="bi bi-copy"></i></button>
-                    <button class="btn btn-sm btn-outline-danger py-0 px-1 ms-1" onclick="deleteRow(${i})" title="Delete" ${closed ? 'disabled' : ''}><i class="bi bi-trash"></i></button>
-                </td>
-                <td class="sticky-col-2 fw-bold">${esc(row['Item'])}</td>
-                <td class="sticky-col-3 specs-col text-wrap">
-                    <div>${esc(row['Item Specs'])}</div>
-                    ${formatRefHtml(row['Reference Link'])}
-                </td>
-                <td>${esc(row['Preferred Company'])}</td>
-                <td>${esc(row['Product Code'])}</td>
+    // Show group headers only when Acquired or Partly Acquired items exist; skip any empty group
+    const showGroupHeaders = (buckets.acquired.length > 0 || buckets.partly.length > 0);
+    const totalCols = 16 + activeVendors.length;
+    let rowsHTML = "";
 
-                <td><input type="number" class="form-control form-control-sm number-box" value="${esc(row['Required Quantity'])}" min="1" onchange="updateLiveRow(${i}, 'Required Quantity', this.value)" ${closed ? 'disabled' : ''}></td>
-                <td>
-                    <select class="form-select form-select-sm number-box" onchange="updateLiveUnit(${i}, this)" ${closed ? 'disabled' : ''}>
-                        ${buildUnitOptions(unitVal)}
-                    </select>
-                </td>
-                <td>
-                    <input type="text" id="liveSubQty_${i}" class="form-control form-control-sm" style="width: 115px;"
-                           value="${pieceFlag ? '' : esc(row['Sub Quantity'])}"
-                           placeholder="${pieceFlag ? '-' : 'e.g. 100 pcs'}"
-                           onchange="updateLiveRow(${i}, 'Sub Quantity', this.value)"
-                           ${(pieceFlag || closed) ? 'disabled' : ''}>
-                </td>
-                <td class="text-center ${acqBadgeClass}">${acqQty || 0}</td>
-                <td class="text-center small text-muted">${esc(row['Acquired Sub Qty'] || '-')}</td>
-                <td><input type="number" step="0.01" class="form-control form-control-sm number-box" value="${esc(row['Estimated Price'])}" onchange="updateLiveRow(${i}, 'Estimated Price', this.value)" ${closed ? 'disabled' : ''}></td>
+    groupDefs.forEach(g => {
+        const items = buckets[g.key];
+        if (items.length === 0) return;
 
-                <td class="fw-bold text-primary">${esc(selVendor)}</td>
-                <td class="fw-bold text-success" id="rowTotal_${i}">₹${totalEst.toFixed(2)}</td>
-                <td class="small text-nowrap">${esc(row['Bill Ref No'] || '-')}</td>
-                <td class="small text-nowrap">${esc(row['Date of Procurement'] || '-')}</td>
-                ${vendorCells}
-            </tr>`;
-        } else {
-            let blankVendorCells = activeVendors.map(() => `<td class="text-muted small">Save row first</td>`).join('');
-            let isAny = (row['Preferred Company'] || 'Any').trim().toLowerCase() === 'any';
+        const isCollapsed = showGroupHeaders && collapsedGroups[g.key];
 
-            rowsHTML += `<tr id="editRow_${i}" class="table-warning">
-                <td class="sticky-col-0">${i + 1}</td>
-                <td class="sticky-col-1 text-center text-nowrap">
-                    <button class="btn btn-sm btn-success py-0 px-1" onclick="saveRow(${i})" title="Save"><i class="bi bi-check-lg"></i></button>
-                    <button class="btn btn-sm btn-danger py-0 px-1 ms-1" onclick="cancelRow(${i})" title="Cancel"><i class="bi bi-x-lg"></i></button>
+        if (showGroupHeaders) {
+            const icon = isCollapsed ? 'bi-caret-right-fill' : 'bi-caret-down-fill';
+            rowsHTML += `<tr class="group-header-row ${g.css}" data-group-header="${g.key}" onclick="toggleGroup('${g.key}')">
+                <td colspan="${totalCols}">
+                    <span class="group-header-sticky">
+                        <i class="bi ${icon}"></i> ${g.label} <span class="badge bg-dark">${items.length}</span>
+                    </span>
                 </td>
-                <td class="sticky-col-2"><input type="text" class="form-control form-control-sm pItem fw-bold" value="${esc(row['Item'])}" list="itemList" onkeydown="handleEnter(event, this, ${i})" placeholder="Item Name"></td>
-                <td class="sticky-col-3 specs-col">
-                    <input type="text" class="form-control form-control-sm pSpecs" value="${esc(row['Item Specs'])}" list="specsList" placeholder="Specs (Capacity...)" onkeydown="handleEnter(event, this, ${i})">
-                    <input type="text" class="form-control form-control-sm pRefLink mt-1 fst-italic" style="font-size: 10pt;" value="${esc(row['Reference Link'])}" placeholder="Reference link (optional)...">
-                </td>
-                <td><input type="text" class="form-control form-control-sm pComp" value="${esc(row['Preferred Company'] || 'Any')}" list="compList" onchange="toggleCode(this)"></td>
-                <td><input type="text" class="form-control form-control-sm pCode" value="${esc(row['Product Code'])}" ${isAny ? 'disabled' : ''}></td>
-
-                <td><input type="number" class="form-control form-control-sm pQty number-box" value="${esc(row['Required Quantity'])}" min="1"></td>
-                <td>
-                    <select class="form-select form-select-sm pUnit number-box" onchange="handleEditUnitChange(this)">
-                        ${buildUnitOptions(unitVal)}
-                    </select>
-                </td>
-                <td>
-                    <input type="text" class="form-control form-control-sm pSubQty" style="width: 115px;"
-                           value="${pieceFlag ? '' : esc(row['Sub Quantity'])}"
-                           placeholder="${pieceFlag ? '-' : 'e.g. 100 pcs'}"
-                           ${pieceFlag ? 'disabled' : ''}>
-                </td>
-                <td class="text-center text-muted small">${acqQty || 0}</td>
-                <td class="text-center text-muted small">${esc(row['Acquired Sub Qty'] || '-')}</td>
-                <td><input type="number" step="0.01" class="form-control form-control-sm pEstPrice number-box" value="${esc(row['Estimated Price'])}"></td>
-                <td colspan="4" class="text-muted small text-center">Save row first</td>
-                ${blankVendorCells}
             </tr>`;
         }
+
+        if (isCollapsed) return;
+
+        items.forEach(({ row, i }, displayIdx) => {
+            const reqQty = parseFloat(row['Required Quantity']) || 0;
+            const acqQty = parseFloat(row['Acquired Qty']) || 0;
+            const totalEst = parseFloat(row['Total Estimate']) || 0;
+            const unitVal = row['Unit'] || 'Piece';
+            const pieceFlag = isPieceUnit(unitVal);
+
+            if (!row._isEditing) {
+                let selVendor = row['Selected Vendor'] || '';
+                let acqBadgeClass = acqQty >= reqQty && reqQty > 0 ? 'text-success fw-bold' : (acqQty > 0 ? 'text-warning fw-bold' : 'text-muted');
+
+                let vendorCells = activeVendors.map(v => {
+                    let vPrice = row[v] ?? '';
+                    let isNA = vPrice === 'NA';
+                    let isChecked = (selVendor === v) ? 'checked' : '';
+                    let valToDisplay = isNA ? '' : vPrice;
+                    let safeV = v.replace(/'/g, "\\'");
+                    return `<td class="vendor-cell">
+                        <div class="d-flex align-items-center gap-1">
+                            <input type="radio" name="vSelect_${i}" value="${esc(v)}" onchange="selectVendor(${i}, '${safeV}')" ${isChecked} ${(isNA || closed) ? 'disabled' : ''}>
+                            <input type="number" step="0.01" class="form-control form-control-sm" style="width: 75px;" placeholder="Price" value="${esc(valToDisplay)}" onchange="updateVendorPrice(${i}, '${safeV}', this.value)" ${(isNA || closed) ? 'disabled' : ''}>
+                            <button class="btn btn-sm btn-outline-danger py-0 px-1 fw-bold" onclick="toggleVendorNA(${i}, '${safeV}')" title="Mark NA" ${closed ? 'disabled' : ''}>🚫</button>
+                        </div>
+                    </td>`;
+                }).join('');
+
+                rowsHTML += `<tr data-group="${g.key}">
+                    <td class="sticky-col-0">${displayIdx + 1}</td>
+                    <td class="sticky-col-1 text-center text-nowrap">
+                        <button class="btn btn-sm btn-outline-primary py-0 px-1" onclick="editRow(${i})" title="Edit" ${closed ? 'disabled' : ''}><i class="bi bi-pencil-square"></i></button>
+                        <button class="btn btn-sm btn-outline-secondary py-0 px-1 ms-1" onclick="duplicateRow(${i})" title="Duplicate Row" ${closed ? 'disabled' : ''}><i class="bi bi-copy"></i></button>
+                        <button class="btn btn-sm btn-outline-danger py-0 px-1 ms-1" onclick="deleteRow(${i})" title="Delete" ${closed ? 'disabled' : ''}><i class="bi bi-trash"></i></button>
+                    </td>
+                    <td class="sticky-col-2 fw-bold">${esc(row['Item'])}</td>
+                    <td class="sticky-col-3 specs-col text-wrap">
+                        <div>${esc(row['Item Specs'])}</div>
+                        ${formatRefHtml(row['Reference Link'])}
+                    </td>
+                    <td>${esc(row['Preferred Company'])}</td>
+                    <td>${esc(row['Product Code'])}</td>
+
+                    <td><input type="number" class="form-control form-control-sm number-box" value="${esc(row['Required Quantity'])}" min="1" onchange="updateLiveRow(${i}, 'Required Quantity', this.value)" ${closed ? 'disabled' : ''}></td>
+                    <td>
+                        <select class="form-select form-select-sm number-box" onchange="updateLiveUnit(${i}, this)" ${closed ? 'disabled' : ''}>
+                            ${buildUnitOptions(unitVal)}
+                        </select>
+                    </td>
+                    <td>
+                        <input type="text" id="liveSubQty_${i}" class="form-control form-control-sm" style="width: 115px;"
+                               value="${pieceFlag ? '' : esc(row['Sub Quantity'])}"
+                               placeholder="${pieceFlag ? '-' : 'e.g. 100 pcs'}"
+                               onchange="updateLiveRow(${i}, 'Sub Quantity', this.value)"
+                               ${(pieceFlag || closed) ? 'disabled' : ''}>
+                    </td>
+                    <td class="text-center ${acqBadgeClass}">${acqQty || 0}</td>
+                    <td class="text-center small text-muted">${esc(row['Acquired Sub Qty'] || '-')}</td>
+                    <td><input type="number" step="0.01" class="form-control form-control-sm number-box" value="${esc(row['Estimated Price'])}" onchange="updateLiveRow(${i}, 'Estimated Price', this.value)" ${closed ? 'disabled' : ''}></td>
+
+                    <td class="fw-bold text-primary">${esc(selVendor)}</td>
+                    <td class="fw-bold text-success" id="rowTotal_${i}">₹${totalEst.toFixed(2)}</td>
+                    <td class="small text-nowrap">${esc(row['Bill Ref No'] || '-')}</td>
+                    <td class="small text-nowrap">${esc(row['Date of Procurement'] || '-')}</td>
+                    ${vendorCells}
+                </tr>`;
+            } else {
+                let blankVendorCells = activeVendors.map(() => `<td class="text-muted small">Save row first</td>`).join('');
+                let isAny = (row['Preferred Company'] || 'Any').trim().toLowerCase() === 'any';
+
+                rowsHTML += `<tr id="editRow_${i}" class="table-warning" data-group="${g.key}">
+                    <td class="sticky-col-0">${displayIdx + 1}</td>
+                    <td class="sticky-col-1 text-center text-nowrap">
+                        <button class="btn btn-sm btn-success py-0 px-1" onclick="saveRow(${i})" title="Save"><i class="bi bi-check-lg"></i></button>
+                        <button class="btn btn-sm btn-danger py-0 px-1 ms-1" onclick="cancelRow(${i})" title="Cancel"><i class="bi bi-x-lg"></i></button>
+                    </td>
+                    <td class="sticky-col-2"><input type="text" class="form-control form-control-sm pItem fw-bold" value="${esc(row['Item'])}" list="itemList" onkeydown="handleEnter(event, this, ${i})" placeholder="Item Name"></td>
+                    <td class="sticky-col-3 specs-col">
+                        <input type="text" class="form-control form-control-sm pSpecs" value="${esc(row['Item Specs'])}" list="specsList" placeholder="Specs (Capacity...)" onkeydown="handleEnter(event, this, ${i})">
+                        <input type="text" class="form-control form-control-sm pRefLink mt-1 fst-italic" style="font-size: 10pt;" value="${esc(row['Reference Link'])}" placeholder="Reference link (optional)...">
+                    </td>
+                    <td><input type="text" class="form-control form-control-sm pComp" value="${esc(row['Preferred Company'] || 'Any')}" list="compList" onchange="toggleCode(this)"></td>
+                    <td><input type="text" class="form-control form-control-sm pCode" value="${esc(row['Product Code'])}" ${isAny ? 'disabled' : ''}></td>
+
+                    <td><input type="number" class="form-control form-control-sm pQty number-box" value="${esc(row['Required Quantity'])}" min="1"></td>
+                    <td>
+                        <select class="form-select form-select-sm pUnit number-box" onchange="handleEditUnitChange(this)">
+                            ${buildUnitOptions(unitVal)}
+                        </select>
+                    </td>
+                    <td>
+                        <input type="text" class="form-control form-control-sm pSubQty" style="width: 115px;"
+                               value="${pieceFlag ? '' : esc(row['Sub Quantity'])}"
+                               placeholder="${pieceFlag ? '-' : 'e.g. 100 pcs'}"
+                               ${pieceFlag ? 'disabled' : ''}>
+                    </td>
+                    <td class="text-center text-muted small">${acqQty || 0}</td>
+                    <td class="text-center text-muted small">${esc(row['Acquired Sub Qty'] || '-')}</td>
+                    <td><input type="number" step="0.01" class="form-control form-control-sm pEstPrice number-box" value="${esc(row['Estimated Price'])}"></td>
+                    <td colspan="4" class="text-muted small text-center">Save row first</td>
+                    ${blankVendorCells}
+                </tr>`;
+            }
+        });
     });
 
     tbody.innerHTML = rowsHTML;
@@ -644,10 +701,9 @@ function updateLiveRow(i, field, val) {
             let price = parseFloat(currentListData[i][sv]) || 0;
             let qty = parseFloat(val) || 0;
             currentListData[i]['Total Estimate'] = (price * qty).toFixed(2);
-            const totalCell = document.getElementById(`rowTotal_${i}`);
-            if (totalCell) totalCell.innerText = '₹' + (price * qty).toFixed(2);
         }
         calcTotal();
+        renderTable();
     }
 }
 
@@ -778,6 +834,7 @@ function optimizeVendors() {
 
 function addNewRow() {
     if (isCurrentListClosed()) return;
+    collapsedGroups.toAcquire = false;
     let newRow = {
         _isEditing: true, _isNew: true, 'Reference Link': '',
         'Required Quantity': 1, 'Unit': 'Piece', 'Sub Quantity': '',
@@ -792,6 +849,7 @@ function addNewRow() {
 
 function duplicateRow(i) {
     if (isCurrentListClosed()) return;
+    collapsedGroups.toAcquire = false;
     let clonedRow = JSON.parse(JSON.stringify(currentListData[i]));
     clonedRow._isEditing = true;
     clonedRow._isNew = true;
@@ -1047,6 +1105,7 @@ function addFromInventory(dbId) {
     if (isCurrentListClosed()) return alert("Current list is closed. Select or create an open list.");
     const p = productDB[dbId];
     if (!p) return;
+    collapsedGroups.toAcquire = false;
     let newRow = {
         'Item': p.item,
         'Item Specs': p.specs || '',
@@ -1475,10 +1534,29 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('searchInput').addEventListener('input', function() {
         const keywords = this.value.toLowerCase().trim().split(/[\s;,]+/).filter(kw => kw.length > 0);
         const rows = document.getElementById('tableBody').getElementsByTagName('tr');
+        const visibleGroups = new Set();
+
         for (let i = 0; i < rows.length; i++) {
-            if (rows[i].classList.contains('table-warning')) continue;
-            if (keywords.length === 0) { rows[i].style.display = ""; continue; }
-            rows[i].style.display = keywords.every(kw => rows[i].innerText.toLowerCase().includes(kw)) ? "" : "none";
+            if (rows[i].classList.contains('group-header-row')) continue;
+            if (rows[i].classList.contains('table-warning')) {
+                if (rows[i].dataset.group) visibleGroups.add(rows[i].dataset.group);
+                continue;
+            }
+            if (keywords.length === 0) {
+                rows[i].style.display = "";
+                if (rows[i].dataset.group) visibleGroups.add(rows[i].dataset.group);
+                continue;
+            }
+            const isMatch = keywords.every(kw => rows[i].innerText.toLowerCase().includes(kw));
+            rows[i].style.display = isMatch ? "" : "none";
+            if (isMatch && rows[i].dataset.group) visibleGroups.add(rows[i].dataset.group);
+        }
+
+        // Hide empty group headers while filtering
+        for (let i = 0; i < rows.length; i++) {
+            if (!rows[i].classList.contains('group-header-row')) continue;
+            const gKey = rows[i].dataset.groupHeader;
+            rows[i].style.display = (keywords.length === 0 || visibleGroups.has(gKey)) ? "" : "none";
         }
     });
 });
