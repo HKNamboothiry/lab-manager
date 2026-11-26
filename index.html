@@ -146,6 +146,9 @@
         <div class="d-flex justify-content-between align-items-center mb-3 px-1 flex-wrap gap-2">
             <small class="text-muted" id="listProgressSummary"></small>
             <div class="d-flex align-items-center gap-2">
+                <button class="btn btn-outline-success btn-sm fw-bold shadow-sm" id="btnBillsModal" onclick="openBillsModal()">
+                    <i class="bi bi-receipt"></i> Bills
+                </button>
                 <button class="btn btn-outline-primary btn-sm fw-bold shadow-sm" id="btnExportProcSummary" onclick="openProcurementSummaryModal()">
                     <i class="bi bi-file-earmark-spreadsheet"></i> Export Procurement Summary
                 </button>
@@ -376,6 +379,44 @@
       </div>
       <div class="modal-footer p-2">
           <button class="btn btn-success btn-sm w-100 fw-bold" onclick="executeExport()">Confirm Export</button>
+      </div>
+  </div></div>
+</div>
+
+    <!-- Upload / View Bills Modal -->
+<div class="modal fade" id="billsModal" tabindex="-1">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content">
+      <div class="modal-header bg-success text-white">
+          <h5 class="modal-title"><i class="bi bi-receipt"></i> Bills — <span id="billsListTitle"></span></h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+          <div class="p-3 rounded bg-light border mb-3">
+              <div class="small text-muted mb-2">
+                  <i class="bi bi-folder-fill text-warning"></i> Drive Path: <strong>BILLS_LAB_MANAGER / <span id="billsFolderPath"></span></strong>
+                  <a id="billsFolderLink" href="#" target="_blank" class="ms-2 small" style="display:none;">Open Folder <i class="bi bi-box-arrow-up-right"></i></a>
+              </div>
+              <div class="row g-2 align-items-end">
+                  <div class="col-md-4">
+                      <label class="form-label small fw-bold mb-1">Bill Ref No. / Label (optional)</label>
+                      <input type="text" id="billRefPrefix" class="form-control form-control-sm" placeholder="e.g., 014362_Sigma">
+                  </div>
+                  <div class="col-md-5">
+                      <label class="form-label small fw-bold mb-1">Select Bill File (PDF / Image)</label>
+                      <input type="file" id="billFileInput" class="form-control form-control-sm" accept=".pdf,.png,.jpg,.jpeg,.webp">
+                  </div>
+                  <div class="col-md-3">
+                      <button type="button" class="btn btn-success btn-sm w-100 fw-bold" id="btnUploadBill" onclick="uploadBillFile()">
+                          <i class="bi bi-cloud-upload"></i> Upload Bill
+                      </button>
+                  </div>
+              </div>
+          </div>
+
+          <h6 class="fw-bold small text-secondary mb-2">Uploaded Bills in This List</h6>
+          <div id="billsListContainer" class="list-group list-group-flush border rounded">
+              <div class="p-3 text-center text-muted small">Loading...</div>
+          </div>
       </div>
   </div></div>
 </div>
