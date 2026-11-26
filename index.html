@@ -142,10 +142,13 @@
             </table>
         </div>
 
-        <!-- Close List Action Bar below Requirement Table -->
-        <div class="d-flex justify-content-between align-items-center mb-3 px-1">
+        <!-- Close List & Export Procurement Summary Action Bar -->
+        <div class="d-flex justify-content-between align-items-center mb-3 px-1 flex-wrap gap-2">
             <small class="text-muted" id="listProgressSummary"></small>
-            <div>
+            <div class="d-flex align-items-center gap-2">
+                <button class="btn btn-outline-primary btn-sm fw-bold shadow-sm" id="btnExportProcSummary" onclick="openProcurementSummaryModal()">
+                    <i class="bi bi-file-earmark-spreadsheet"></i> Export Procurement Summary
+                </button>
                 <button class="btn btn-outline-danger btn-sm fw-bold shadow-sm" id="btnCloseList" onclick="closeCurrentList()">
                     <i class="bi bi-lock-fill"></i> Close Requirement List
                 </button>
@@ -175,6 +178,60 @@
             </div>
         </div>
     </div>
+</div>
+
+<!-- Procurement Summary & Additional Expenses Modal -->
+<div class="modal fade" id="procSummaryModal" tabindex="-1">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content">
+      <div class="modal-header bg-primary text-white">
+          <h5 class="modal-title"><i class="bi bi-file-earmark-spreadsheet"></i> Export Procurement Summary</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+          <div class="row g-2 mb-3 p-2 rounded bg-light border small">
+              <div class="col-md-6"><strong>List:</strong> <span id="sumListName"></span></div>
+              <div class="col-md-6"><strong>Prepared By:</strong> <span id="sumPreparedBy"></span></div>
+              <div class="col-md-6"><strong>Sub Total (Items):</strong> <span id="sumSubTotal" class="fw-bold text-success">₹0.00</span></div>
+              <div class="col-md-6"><strong>Grand Total:</strong> <span id="sumGrandTotalPreview" class="fw-bold text-primary">₹0.00</span></div>
+          </div>
+
+          <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-1">
+              <label class="form-label fw-bold mb-0">Additional Expense Details (Saved to Google Sheet)</label>
+              <div class="d-flex gap-1 flex-wrap">
+                  <button type="button" class="btn btn-outline-secondary btn-sm py-0" onclick="addExpenseRow('Transportation charges')">+ Transportation</button>
+                  <button type="button" class="btn btn-outline-secondary btn-sm py-0" onclick="addExpenseRow('Processing charges')">+ Processing</button>
+                  <button type="button" class="btn btn-outline-secondary btn-sm py-0" onclick="addExpenseRow('Marketplace fee')">+ Marketplace Fee</button>
+                  <button type="button" class="btn btn-outline-primary btn-sm py-0" onclick="addExpenseRow('')"><i class="bi bi-plus"></i> Custom</button>
+              </div>
+          </div>
+
+          <div id="additionalExpensesList" class="mb-3"></div>
+
+          <div class="row g-2 small border-top pt-2">
+              <div class="col-md-6">
+                  <label class="form-label small fw-bold mb-1">Date of List Creation</label>
+                  <input type="text" id="sumListCreatedDate" class="form-control form-control-sm" placeholder="dd/MM/yyyy HH:mm:ss">
+              </div>
+              <div class="col-md-6">
+                  <label class="form-label small fw-bold mb-1">Last Date of Procurement</label>
+                  <input type="text" id="sumLastProcDate" class="form-control form-control-sm" placeholder="dd/MM/yyyy HH:mm:ss">
+              </div>
+          </div>
+      </div>
+      <div class="modal-footer justify-content-between">
+          <button type="button" class="btn btn-warning btn-sm fw-bold" id="btnSaveExpenses" onclick="saveProcurementExpenses(true)">
+              <i class="bi bi-floppy"></i> Save Expenses
+          </button>
+          <div class="d-flex gap-2">
+              <button type="button" class="btn btn-outline-dark btn-sm fw-bold" onclick="printProcurementSummary()">
+                  <i class="bi bi-printer"></i> Print Report
+              </button>
+              <button type="button" class="btn btn-success btn-sm fw-bold px-3" onclick="downloadProcurementSummaryPdf()">
+                  <i class="bi bi-file-earmark-pdf"></i> Export PDF
+              </button>
+          </div>
+      </div>
+  </div></div>
 </div>
 
 <!-- Alerts Modal (Unacquired Carry-Forward + Low Stock Items) -->
