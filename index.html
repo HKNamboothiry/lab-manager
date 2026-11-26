@@ -39,9 +39,19 @@
         .group-header-row { cursor: pointer; user-select: none; }
         .group-header-row td { padding: 8px 12px !important; font-weight: 700; }
         .group-header-sticky { position: sticky; left: 12px; display: inline-flex; align-items: center; gap: 8px; }
+        .group-pending td  { background-color: #e9ecef !important; color: #212529; }
         .group-acquired td { background-color: #d1e7dd !important; color: #0f5132; }
-        .group-partly td   { background-color: #fff3cd !important; color: #664d03; }
-        .group-pending td  { background-color: #cfe2ff !important; color: #084298; }
+        .group-partly td   { background-color: #ffeeba !important; color: #664d03; }
+
+        /* Group Row Background Colors (applies to both regular and sticky frozen columns) */
+        tbody tr[data-group="toAcquire"]:not(.table-warning) td { background-color: #ffffff; }
+        tbody tr[data-group="toAcquire"]:not(.table-warning):hover td { background-color: var(--cell-hover); }
+
+        tbody tr[data-group="acquired"]:not(.table-warning) td { background-color: #edf7f0 !important; }
+        tbody tr[data-group="acquired"]:not(.table-warning):hover td { background-color: #dff0e4 !important; }
+
+        tbody tr[data-group="partly"]:not(.table-warning) td { background-color: #fffbe6 !important; }
+        tbody tr[data-group="partly"]:not(.table-warning):hover td { background-color: #fdf3cc !important; }
 
         /* Single-line 10pt italic Reference Link */
         .ref-line {
