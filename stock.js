@@ -6,6 +6,7 @@ let stockLedger = [];
 let reqLists = [];
 let allUsernames = [];
 let procRows = [];
+let showProcAcquired = false;
 let expandedStockIds = new Set();
 
 const DEFAULT_SUB_UNITS = ["Piece", "mL", "L", "g", "kg", "Pair", "Roll"];
@@ -230,7 +231,6 @@ function renderStockTable() {
             ? `<div class="fw-semibold">${item.threshold} ${esc(threshUnitLabel)}</div><small class="text-muted">Warn ≤ ${item.threshold + 10}</small>`
             : `<span class="text-muted small">Not set</span>`;
 
-        // Expanded Ledger History (newest first)
         const itemLogs = stockLedger.filter(l => l.stockId === item.stockId).reverse();
         let ledgerRows = itemLogs.map(log => {
             const isAcq = log.type === "Acquirement";
@@ -329,6 +329,17 @@ function toggleExpandRow(stockId) {
 // -------------------------------------------------------------
 // INSERT FROM REQUIREMENT LIST MODAL (Admin & Supervisor)
 // -------------------------------------------------------------
+function getProcRowStatus(r) {
+    if (r.reqQty > 0 && r.acqQty >= r.reqQty) return 'acquired';
+    if (r.acqQty > 0 && r.acqQty < r.reqQty) return 'partly';
+    return 'pending';
+}
+
+function toggleShowProcAcquired() {
+    showProcAcquired = !showProcAcquired;
+    renderProcModalRows();
+}
+
 function openInsertFromReqModal() {
     const sel = document.getElementById('reqListDropdown');
     sel.innerHTML = `<option value="" disabled selected>Choose a Requirement List...</option>`;
@@ -337,7 +348,9 @@ function openInsertFromReqModal() {
         sel.innerHTML += `<option value="${esc(l.name)}">${esc(l.name + tag)}</option>`;
     });
     document.getElementById('procModalBody').innerHTML = `<tr><td colspan="16" class="text-center p-3 text-muted">Select a requirement list above.</td></tr>`;
+    document.getElementById('btnToggleProcAcquired').style.display = 'none';
     procRows = [];
+    showProcAcquired = false;
     bootstrap.Modal.getOrCreateInstance(document.getElementById('insertReqModal')).show();
 }
 
@@ -346,6 +359,7 @@ async function loadReqListForProcurement() {
     if (!listName) return;
     const tbody = document.getElementById('procModalBody');
     tbody.innerHTML = `<tr><td colspan="16" class="text-center p-3"><i class="bi bi-hourglass-split"></i> Loading list items...</td></tr>`;
+    showProcAcquired = false;
 
     try {
         const payload = await apiPost({ action: "getListData", listName: listName });
@@ -412,66 +426,118 @@ function handleProcSubUnitChange(idx, sel) {
 
 function renderProcModalRows() {
     const tbody = document.getElementById('procModalBody');
+    const toggleBtn = document.getElementById('btnToggleProcAcquired');
+
     if (procRows.length === 0) {
         tbody.innerHTML = `<tr><td colspan="16" class="text-center text-muted p-3">This list has no items.</td></tr>`;
+        toggleBtn.style.display = 'none';
         return;
     }
 
-    let html = "";
+    // Partition into Items to Acquire (white), Partly Acquired (yellow, always shown), and Completely Acquired (green, hidden by default)
+    const buckets = { pending: [], partly: [], acquired: [] };
     procRows.forEach((r, idx) => {
-        const pieceFlag = isPieceUnit(r.unit);
-        const fullyAcqTag = r.acqQty >= r.reqQty && r.reqQty > 0
-            ? `<div class="badge bg-success-subtle text-success">Acq: ${r.acqQty}</div>`
-            : (r.acqQty > 0 ? `<div class="badge bg-warning-subtle text-dark">Acq: ${r.acqQty}</div>` : '');
-
-        html += `<tr>
-            <td class="text-center"><input type="checkbox" ${r.selected ? 'checked' : ''} onchange="procRows[${idx}].selected = this.checked"></td>
-            <td class="fw-bold">${esc(r.item)}</td>
-            <td class="small">${esc(r.specs)}</td>
-            <td class="text-center fw-semibold">${r.reqQty} ${fullyAcqTag}</td>
-            <td>${esc(r.unit)}</td>
-            <td class="small text-muted text-center">${pieceFlag ? '-' : esc(r.subQty || '-')}</td>
-            <td class="small text-muted text-center">${pieceFlag ? '-' : esc(r.subUnit || '-')}</td>
-            <td><input type="number" step="0.01" min="0" class="form-control form-control-sm" value="${esc(r.purchasedQty)}" oninput="procRows[${idx}].purchasedQty = this.value"></td>
-            <td><input type="number" step="any" min="0" class="form-control form-control-sm" value="${pieceFlag ? '' : esc(r.purchasedSubQty)}" placeholder="${pieceFlag ? '-' : '100'}" ${pieceFlag ? 'disabled' : ''} oninput="procRows[${idx}].purchasedSubQty = this.value"></td>
-            <td>
-                <select class="form-select form-select-sm" ${pieceFlag ? 'disabled' : ''} onchange="handleProcSubUnitChange(${idx}, this)">
-                    ${buildSubUnitOptions(r.purchasedSubUnit, pieceFlag)}
-                </select>
-            </td>
-            <td><input type="text" class="form-control form-control-sm" value="${esc(r.vendor)}" oninput="procRows[${idx}].vendor = this.value"></td>
-            <td><input type="number" step="0.01" class="form-control form-control-sm" placeholder="₹" value="${esc(r.amount)}" oninput="procRows[${idx}].amount = this.value"></td>
-            <td>
-                <div class="input-group input-group-sm">
-                    <input type="text" class="form-control" placeholder="Bill Ref #" value="${esc(r.refNo)}" oninput="procRows[${idx}].refNo = this.value">
-                    <button class="btn btn-outline-primary" type="button" onclick="copyRefDateBelow(${idx}, true)" title="Copy Ref No. & Date to rows below with SAME vendor">
-                        <i class="bi bi-arrow-down-square-fill"></i>
-                    </button>
-                    <button class="btn btn-outline-secondary" type="button" onclick="copyRefDateBelow(${idx}, false)" title="Copy Ref No. & Date to ALL rows below">
-                        <i class="bi bi-chevron-double-down"></i>
-                    </button>
-                </div>
-            </td>
-            <td><input type="date" class="form-control form-control-sm" value="${esc(r.procDate)}" onchange="procRows[${idx}].procDate = this.value"></td>
-            <td><input type="text" class="form-control form-control-sm" placeholder="Shelf / Room" value="${esc(r.location)}" oninput="procRows[${idx}].location = this.value"></td>
-            <td>
-                <div class="input-group input-group-sm">
-                    <input type="number" min="0" class="form-control" placeholder="Min" value="${esc(r.threshold)}" oninput="procRows[${idx}].threshold = this.value">
-                    <select class="form-select" style="max-width:72px;" onchange="procRows[${idx}].thresholdType = this.value">
-                        <option value="qty" ${r.thresholdType === 'qty' ? 'selected' : ''}>${esc(r.unit)}</option>
-                        ${!pieceFlag ? `<option value="sub" ${r.thresholdType === 'sub' ? 'selected' : ''}>${esc(r.purchasedSubUnit || 'Sub')}</option>` : ''}
-                    </select>
-                </div>
-            </td>
-        </tr>`;
+        buckets[getProcRowStatus(r)].push({ r, idx });
     });
 
+    // Update Show/Hide Acquired button
+    if (buckets.acquired.length > 0) {
+        toggleBtn.style.display = 'inline-block';
+        if (showProcAcquired) {
+            toggleBtn.className = "btn btn-sm btn-success fw-semibold";
+            toggleBtn.innerHTML = `<i class="bi bi-eye-slash"></i> Hide Acquired (${buckets.acquired.length})`;
+        } else {
+            toggleBtn.className = "btn btn-sm btn-outline-success fw-semibold";
+            toggleBtn.innerHTML = `<i class="bi bi-eye"></i> Show Acquired (${buckets.acquired.length})`;
+        }
+    } else {
+        toggleBtn.style.display = 'none';
+    }
+
+    const groupDefs = [
+        { key: 'pending',  label: 'Items to Acquire',          headerCss: 'proc-group-pending',  rowCss: 'proc-row-pending' },
+        { key: 'partly',   label: 'Partly Acquired Items',     headerCss: 'proc-group-partly',   rowCss: 'proc-row-partly' },
+        { key: 'acquired', label: 'Completely Acquired Items', headerCss: 'proc-group-acquired', rowCss: 'proc-row-acquired' }
+    ];
+
+    const visibleGroups = groupDefs.filter(g => buckets[g.key].length > 0 && (g.key !== 'acquired' || showProcAcquired));
+    const showGroupHeaders = (buckets.partly.length > 0 || (showProcAcquired && buckets.acquired.length > 0));
+    let html = "";
+    const visibleItems = [];
+
+    visibleGroups.forEach(g => {
+        const items = buckets[g.key];
+        if (showGroupHeaders) {
+            html += `<tr class="proc-group-header ${g.headerCss}">
+                <td colspan="16">${g.label} <span class="badge bg-dark ms-1">${items.length}</span></td>
+            </tr>`;
+        }
+
+        items.forEach(({ r, idx }) => {
+            visibleItems.push(r);
+            const pieceFlag = isPieceUnit(r.unit);
+            const statusBadge = g.key === 'acquired'
+                ? `<div class="badge bg-success-subtle text-success border border-success-subtle">Acq: ${r.acqQty}</div>`
+                : (g.key === 'partly'
+                    ? `<div class="badge bg-warning-subtle text-dark border border-warning-subtle">Acq: ${r.acqQty} / ${r.reqQty}</div>`
+                    : '');
+
+            html += `<tr class="${g.rowCss}">
+                <td class="text-center"><input type="checkbox" ${r.selected ? 'checked' : ''} onchange="procRows[${idx}].selected = this.checked"></td>
+                <td class="fw-bold">${esc(r.item)}</td>
+                <td class="small">${esc(r.specs)}</td>
+                <td class="text-center fw-semibold">${r.reqQty} ${statusBadge}</td>
+                <td>${esc(r.unit)}</td>
+                <td class="small text-muted text-center">${pieceFlag ? '-' : esc(r.subQty || '-')}</td>
+                <td class="small text-muted text-center">${pieceFlag ? '-' : esc(r.subUnit || '-')}</td>
+                <td><input type="number" step="0.01" min="0" class="form-control form-control-sm" value="${esc(r.purchasedQty)}" oninput="procRows[${idx}].purchasedQty = this.value"></td>
+                <td><input type="number" step="any" min="0" class="form-control form-control-sm" value="${pieceFlag ? '' : esc(r.purchasedSubQty)}" placeholder="${pieceFlag ? '-' : '100'}" ${pieceFlag ? 'disabled' : ''} oninput="procRows[${idx}].purchasedSubQty = this.value"></td>
+                <td>
+                    <select class="form-select form-select-sm" ${pieceFlag ? 'disabled' : ''} onchange="handleProcSubUnitChange(${idx}, this)">
+                        ${buildSubUnitOptions(r.purchasedSubUnit, pieceFlag)}
+                    </select>
+                </td>
+                <td><input type="text" class="form-control form-control-sm" value="${esc(r.vendor)}" oninput="procRows[${idx}].vendor = this.value"></td>
+                <td><input type="number" step="0.01" class="form-control form-control-sm" placeholder="₹" value="${esc(r.amount)}" oninput="procRows[${idx}].amount = this.value"></td>
+                <td>
+                    <div class="input-group input-group-sm">
+                        <input type="text" class="form-control" placeholder="Bill Ref #" value="${esc(r.refNo)}" oninput="procRows[${idx}].refNo = this.value">
+                        <button class="btn btn-outline-primary" type="button" onclick="copyRefDateBelow(${idx}, true)" title="Copy Ref No. & Date to rows below with SAME vendor">
+                            <i class="bi bi-arrow-down-square-fill"></i>
+                        </button>
+                        <button class="btn btn-outline-secondary" type="button" onclick="copyRefDateBelow(${idx}, false)" title="Copy Ref No. & Date to ALL rows below">
+                            <i class="bi bi-chevron-double-down"></i>
+                        </button>
+                    </div>
+                </td>
+                <td><input type="date" class="form-control form-control-sm" value="${esc(r.procDate)}" onchange="procRows[${idx}].procDate = this.value"></td>
+                <td><input type="text" class="form-control form-control-sm" placeholder="Shelf / Room" value="${esc(r.location)}" oninput="procRows[${idx}].location = this.value"></td>
+                <td>
+                    <div class="input-group input-group-sm">
+                        <input type="number" min="0" class="form-control" placeholder="Min" value="${esc(r.threshold)}" oninput="procRows[${idx}].threshold = this.value">
+                        <select class="form-select" style="max-width:72px;" onchange="procRows[${idx}].thresholdType = this.value">
+                            <option value="qty" ${r.thresholdType === 'qty' ? 'selected' : ''}>${esc(r.unit)}</option>
+                            ${!pieceFlag ? `<option value="sub" ${r.thresholdType === 'sub' ? 'selected' : ''}>${esc(r.purchasedSubUnit || 'Sub')}</option>` : ''}
+                        </select>
+                    </div>
+                </td>
+            </tr>`;
+        });
+    });
+
+    if (!html) {
+        html = `<tr><td colspan="16" class="text-center text-success fw-semibold p-3">All items in this requirement list are completely acquired. Click "Show Acquired" above to view them.</td></tr>`;
+    }
+
     tbody.innerHTML = html;
-    document.getElementById('chkAllProc').checked = procRows.every(r => r.selected);
+    document.getElementById('chkAllProc').checked = visibleItems.length > 0 && visibleItems.every(r => r.selected);
 }
 
 function toggleAllProcRows(checked) {
-    procRows.forEach(r => r.selected = checked);
+    procRows.forEach(r => {
+        if (getProcRowStatus(r) === 'acquired' && !showProcAcquired) return;
+        r.selected = checked;
+    });
     renderProcModalRows();
 }
 
@@ -479,6 +545,7 @@ function copyRefDateBelow(fromIdx, sameVendorOnly) {
     const src = procRows[fromIdx];
     const srcVendor = (src.vendor || "").trim().toLowerCase();
     for (let i = fromIdx + 1; i < procRows.length; i++) {
+        if (getProcRowStatus(procRows[i]) === 'acquired' && !showProcAcquired) continue;
         if (!sameVendorOnly || (procRows[i].vendor || "").trim().toLowerCase() === srcVendor) {
             procRows[i].refNo = src.refNo;
             procRows[i].procDate = src.procDate;
