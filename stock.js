@@ -57,19 +57,20 @@ function nowFormattedDDMMYYYYHHMM() {
 }
 
 function formatStockDisplay(totalBase, unit, subPerUnit, subLabel) {
-    if (subPerUnit <= 1) {
-        return `${totalBase} ${unit}${totalBase === 1 ? '' : 's'}`;
+    const hasSubUnit = !isPieceUnit(unit) && subPerUnit > 1;
+    if (!hasSubUnit) {
+        return `${totalBase} ${unit}`;
     }
+    const subLbl = (subLabel && subLabel.trim()) ? subLabel.trim() : "Sub Unit";
     const fullPacks = Math.floor(totalBase / subPerUnit);
     const remSub = Number((totalBase % subPerUnit).toFixed(2));
-    const lbl = subLabel || "Piece";
     if (remSub === 0) {
-        return `${fullPacks} ${unit}${fullPacks === 1 ? '' : 's'} (${subPerUnit} ${lbl}/${unit})`;
+        return `${fullPacks} ${unit} (${subPerUnit} ${subLbl})`;
     }
     if (fullPacks === 0) {
-        return `${remSub} ${lbl}`;
+        return `${remSub} ${subLbl}`;
     }
-    return `${fullPacks} ${unit}${fullPacks === 1 ? '' : 's'} + ${remSub} ${lbl} (${totalBase} ${lbl})`;
+    return `${fullPacks} ${unit} + ${remSub} ${subLbl} (${totalBase} ${subLbl})`;
 }
 
 function isLowStock(item) {
@@ -221,12 +222,13 @@ function renderStockTable() {
                </div>`
             : `<div class="small text-muted mt-1 fst-italic">No deductions yet</div>`;
 
+        const hasSubUnit = !isPieceUnit(item.unit) && item.subPerUnit > 1;
         const stockDisplay = formatStockDisplay(item.totalBase, item.unit, item.subPerUnit, item.subLabel);
-        const subQtyUnitDisplay = item.subPerUnit > 1
-            ? `<div class="fw-semibold">${item.subPerUnit} ${esc(item.subLabel || 'Piece')}</div><small class="text-muted">per ${esc(item.unit)}</small>`
-            : `<span class="text-muted small">— (${esc(item.unit)})</span>`;
+        const subQtyUnitDisplay = hasSubUnit
+            ? `<div class="fw-semibold">${item.subPerUnit} ${esc(item.subLabel || 'Sub Unit')}</div>`
+            : `<span class="text-muted small">-</span>`;
 
-        const threshUnitLabel = (item.thresholdType === "sub" && item.subPerUnit > 1) ? (item.subLabel || "Piece") : item.unit;
+        const threshUnitLabel = (item.thresholdType === "sub" && hasSubUnit) ? (item.subLabel || "Sub Unit") : item.unit;
         const threshDisplay = item.threshold > 0
             ? `<div class="fw-semibold">${item.threshold} ${esc(threshUnitLabel)}</div><small class="text-muted">Warn ≤ ${item.threshold + 10}</small>`
             : `<span class="text-muted small">Not set</span>`;
@@ -340,6 +342,12 @@ function toggleShowProcAcquired() {
     renderProcModalRows();
 }
 
+function clearProcSearch() {
+    const inp = document.getElementById('procSearchInput');
+    if (inp) inp.value = "";
+    renderProcModalRows();
+}
+
 function openInsertFromReqModal() {
     const sel = document.getElementById('reqListDropdown');
     sel.innerHTML = `<option value="" disabled selected>Choose a Requirement List...</option>`;
@@ -347,6 +355,8 @@ function openInsertFromReqModal() {
         const tag = l.status === "Closed" ? " [Closed]" : "";
         sel.innerHTML += `<option value="${esc(l.name)}">${esc(l.name + tag)}</option>`;
     });
+    const searchInp = document.getElementById('procSearchInput');
+    if (searchInp) searchInp.value = "";
     document.getElementById('procModalBody').innerHTML = `<tr><td colspan="16" class="text-center p-3 text-muted">Select a requirement list above.</td></tr>`;
     document.getElementById('btnToggleProcAcquired').style.display = 'none';
     procRows = [];
@@ -379,7 +389,7 @@ async function loadReqListForProcurement() {
             );
 
             const reqSubQty = pieceFlag ? '' : String(r['Sub Quantity'] || '');
-            const reqSubUnit = pieceFlag ? '' : String(r['Sub Unit'] || 'Piece');
+            const reqSubUnit = pieceFlag ? '' : String(r['Sub Unit'] || (existingStock && existingStock.subLabel) || 'Piece');
 
             return {
                 selected: remQty > 0,
@@ -427,6 +437,9 @@ function handleProcSubUnitChange(idx, sel) {
 function renderProcModalRows() {
     const tbody = document.getElementById('procModalBody');
     const toggleBtn = document.getElementById('btnToggleProcAcquired');
+    const searchEl = document.getElementById('procSearchInput');
+    const rawSearch = (searchEl ? searchEl.value : "").toLowerCase().trim();
+    const keywords = rawSearch.split(/[\s;,]+/).filter(Boolean);
 
     if (procRows.length === 0) {
         tbody.innerHTML = `<tr><td colspan="16" class="text-center text-muted p-3">This list has no items.</td></tr>`;
@@ -434,25 +447,28 @@ function renderProcModalRows() {
         return;
     }
 
-    // Partition into Items to Acquire (white), Partly Acquired (yellow, always shown), and Completely Acquired (green, hidden by default)
-    const buckets = { pending: [], partly: [], acquired: [] };
-    procRows.forEach((r, idx) => {
-        buckets[getProcRowStatus(r)].push({ r, idx });
-    });
-
-    // Update Show/Hide Acquired button
-    if (buckets.acquired.length > 0) {
+    const totalAcquiredAll = procRows.filter(r => getProcRowStatus(r) === 'acquired').length;
+    if (totalAcquiredAll > 0) {
         toggleBtn.style.display = 'inline-block';
         if (showProcAcquired) {
             toggleBtn.className = "btn btn-sm btn-success fw-semibold";
-            toggleBtn.innerHTML = `<i class="bi bi-eye-slash"></i> Hide Acquired (${buckets.acquired.length})`;
+            toggleBtn.innerHTML = `<i class="bi bi-eye-slash"></i> Hide Acquired (${totalAcquiredAll})`;
         } else {
             toggleBtn.className = "btn btn-sm btn-outline-success fw-semibold";
-            toggleBtn.innerHTML = `<i class="bi bi-eye"></i> Show Acquired (${buckets.acquired.length})`;
+            toggleBtn.innerHTML = `<i class="bi bi-eye"></i> Show Acquired (${totalAcquiredAll})`;
         }
     } else {
         toggleBtn.style.display = 'none';
     }
+
+    const buckets = { pending: [], partly: [], acquired: [] };
+    procRows.forEach((r, idx) => {
+        if (keywords.length > 0) {
+            const hay = `${r.item} ${r.specs} ${r.vendor} ${r.unit} ${r.subUnit} ${r.prefComp} ${r.code} ${r.refNo} ${r.location}`.toLowerCase();
+            if (!keywords.every(k => hay.includes(k))) return;
+        }
+        buckets[getProcRowStatus(r)].push({ r, idx });
+    });
 
     const groupDefs = [
         { key: 'pending',  label: 'Items to Acquire',          headerCss: 'proc-group-pending',  rowCss: 'proc-row-pending' },
@@ -517,7 +533,7 @@ function renderProcModalRows() {
                         <input type="number" min="0" class="form-control" placeholder="Min" value="${esc(r.threshold)}" oninput="procRows[${idx}].threshold = this.value">
                         <select class="form-select" style="max-width:72px;" onchange="procRows[${idx}].thresholdType = this.value">
                             <option value="qty" ${r.thresholdType === 'qty' ? 'selected' : ''}>${esc(r.unit)}</option>
-                            ${!pieceFlag ? `<option value="sub" ${r.thresholdType === 'sub' ? 'selected' : ''}>${esc(r.purchasedSubUnit || 'Sub')}</option>` : ''}
+                            ${!pieceFlag ? `<option value="sub" ${r.thresholdType === 'sub' ? 'selected' : ''}>${esc(r.purchasedSubUnit || 'Sub Unit')}</option>` : ''}
                         </select>
                     </div>
                 </td>
@@ -526,7 +542,11 @@ function renderProcModalRows() {
     });
 
     if (!html) {
-        html = `<tr><td colspan="16" class="text-center text-success fw-semibold p-3">All items in this requirement list are completely acquired. Click "Show Acquired" above to view them.</td></tr>`;
+        if (keywords.length > 0) {
+            html = `<tr><td colspan="16" class="text-center text-muted p-3">No requirement items matched "${esc(rawSearch)}".</td></tr>`;
+        } else {
+            html = `<tr><td colspan="16" class="text-center text-success fw-semibold p-3">All items in this requirement list are completely acquired. Click "Show Acquired" above to view them.</td></tr>`;
+        }
     }
 
     tbody.innerHTML = html;
@@ -534,8 +554,16 @@ function renderProcModalRows() {
 }
 
 function toggleAllProcRows(checked) {
+    const searchEl = document.getElementById('procSearchInput');
+    const rawSearch = (searchEl ? searchEl.value : "").toLowerCase().trim();
+    const keywords = rawSearch.split(/[\s;,]+/).filter(Boolean);
+
     procRows.forEach(r => {
         if (getProcRowStatus(r) === 'acquired' && !showProcAcquired) return;
+        if (keywords.length > 0) {
+            const hay = `${r.item} ${r.specs} ${r.vendor} ${r.unit} ${r.subUnit} ${r.prefComp} ${r.code} ${r.refNo} ${r.location}`.toLowerCase();
+            if (!keywords.every(k => hay.includes(k))) return;
+        }
         r.selected = checked;
     });
     renderProcModalRows();
@@ -615,11 +643,11 @@ function openDeductModal(stockId) {
     uSel.innerHTML = names.map(u => `<option value="${esc(u)}" ${u === USER.username ? 'selected' : ''}>${esc(u)}${u === USER.username ? ' (You)' : ''}</option>`).join('');
 
     const mSel = document.getElementById('dedUnitMode');
-    if (item.subPerUnit > 1) {
-        const subLbl = item.subLabel || "Piece";
+    if (!isPieceUnit(item.unit) && item.subPerUnit > 1) {
+        const subLbl = item.subLabel || "Sub Unit";
         mSel.innerHTML = `
             <option value="base" selected>${esc(subLbl)} (Sub Unit)</option>
-            <option value="pack">${esc(item.unit)} (${item.subPerUnit} ${esc(subLbl)}/${esc(item.unit)})</option>
+            <option value="pack">${esc(item.unit)} (${item.subPerUnit} ${esc(subLbl)})</option>
         `;
     } else {
         mSel.innerHTML = `<option value="base" selected>${esc(item.unit)}</option>`;
@@ -781,9 +809,9 @@ function openEditStockMeta(stockId) {
     document.getElementById('metaThreshold').value = item.threshold || 0;
 
     const tSel = document.getElementById('metaThresholdType');
-    if (item.subPerUnit > 1) {
+    if (!isPieceUnit(item.unit) && item.subPerUnit > 1) {
         tSel.innerHTML = `
-            <option value="sub" ${item.thresholdType === 'sub' ? 'selected' : ''}>${esc(item.subLabel || 'Piece')} (Sub Unit)</option>
+            <option value="sub" ${item.thresholdType === 'sub' ? 'selected' : ''}>${esc(item.subLabel || 'Sub Unit')} (Sub Unit)</option>
             <option value="qty" ${item.thresholdType === 'qty' ? 'selected' : ''}>${esc(item.unit)} (Main Unit)</option>
         `;
     } else {
