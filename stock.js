@@ -8,6 +8,8 @@ let allUsernames = [];
 let procRows = [];
 let expandedStockIds = new Set();
 
+const DEFAULT_SUB_UNITS = ["Piece", "mL", "L", "g", "kg", "Pair", "Roll"];
+
 // Proxy authentication cache: { username: expiryTimestampMs } (2 minutes validity)
 const proxyAuthCache = {};
 const PROXY_AUTH_DURATION_MS = 2 * 60 * 1000;
@@ -19,6 +21,23 @@ function esc(val) {
         .replace(/"/g, "&quot;")
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;");
+}
+
+function isPieceUnit(unit) {
+    return (unit || "Piece").trim().toLowerCase() === "piece";
+}
+
+function buildSubUnitOptions(selectedSubUnit, disabledFlag = false) {
+    if (disabledFlag) return `<option value="" selected>-</option>`;
+    const curr = (selectedSubUnit || "Piece").trim();
+    const units = [...DEFAULT_SUB_UNITS];
+    if (curr && !units.some(u => u.toLowerCase() === curr.toLowerCase())) units.unshift(curr);
+    let html = units.map(u => {
+        const sel = u.toLowerCase() === curr.toLowerCase() ? "selected" : "";
+        return `<option value="${esc(u)}" ${sel}>${esc(u)}</option>`;
+    }).join('');
+    html += `<option value="_NEW_">+ Add</option>`;
+    return html;
 }
 
 async function apiPost(payload) {
@@ -42,7 +61,7 @@ function formatStockDisplay(totalBase, unit, subPerUnit, subLabel) {
     }
     const fullPacks = Math.floor(totalBase / subPerUnit);
     const remSub = Number((totalBase % subPerUnit).toFixed(2));
-    const lbl = subLabel || "pcs";
+    const lbl = subLabel || "Piece";
     if (remSub === 0) {
         return `${fullPacks} ${unit}${fullPacks === 1 ? '' : 's'} (${subPerUnit} ${lbl}/${unit})`;
     }
@@ -120,7 +139,7 @@ function showStockApp() {
 // -------------------------------------------------------------
 async function loadStockData() {
     const tbody = document.getElementById('stockTableBody');
-    tbody.innerHTML = `<tr><td colspan="5" class="text-center p-4 text-muted"><i class="bi bi-hourglass-split"></i> Loading stock register...</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="6" class="text-center p-4 text-muted"><i class="bi bi-hourglass-split"></i> Loading stock register...</td></tr>`;
     try {
         const res = await apiPost({ action: "getStockData", username: USER.username, role: USER.role });
         if (res.status === "success") {
@@ -130,10 +149,10 @@ async function loadStockData() {
             allUsernames = res.usernames || [USER.username];
             renderStockTable();
         } else {
-            tbody.innerHTML = `<tr><td colspan="5" class="text-center text-danger p-4">${esc(res.message || 'Load failed')}</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="6" class="text-center text-danger p-4">${esc(res.message || 'Load failed')}</td></tr>`;
         }
     } catch (e) {
-        tbody.innerHTML = `<tr><td colspan="5" class="text-center text-danger p-4">Failed to connect to backend.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="6" class="text-center text-danger p-4">Failed to connect to backend.</td></tr>`;
     }
 }
 
@@ -166,7 +185,7 @@ function renderStockTable() {
         if (filterMode === "PLACED" && !placed) return;
 
         if (keywords.length > 0) {
-            const hay = `${item.item} ${item.specs} ${item.latestVendor} ${item.latestRefNo} ${item.location} ${item.latestDedUser}`.toLowerCase();
+            const hay = `${item.item} ${item.specs} ${item.latestVendor} ${item.latestRefNo} ${item.location} ${item.latestDedUser} ${item.subLabel}`.toLowerCase();
             if (!keywords.every(k => hay.includes(k))) return;
         }
 
@@ -202,7 +221,11 @@ function renderStockTable() {
             : `<div class="small text-muted mt-1 fst-italic">No deductions yet</div>`;
 
         const stockDisplay = formatStockDisplay(item.totalBase, item.unit, item.subPerUnit, item.subLabel);
-        const threshUnitLabel = (item.thresholdType === "sub" && item.subPerUnit > 1) ? (item.subLabel || "pcs") : item.unit;
+        const subQtyUnitDisplay = item.subPerUnit > 1
+            ? `<div class="fw-semibold">${item.subPerUnit} ${esc(item.subLabel || 'Piece')}</div><small class="text-muted">per ${esc(item.unit)}</small>`
+            : `<span class="text-muted small">— (${esc(item.unit)})</span>`;
+
+        const threshUnitLabel = (item.thresholdType === "sub" && item.subPerUnit > 1) ? (item.subLabel || "Piece") : item.unit;
         const threshDisplay = item.threshold > 0
             ? `<div class="fw-semibold">${item.threshold} ${esc(threshUnitLabel)}</div><small class="text-muted">Warn ≤ ${item.threshold + 10}</small>`
             : `<span class="text-muted small">Not set</span>`;
@@ -248,6 +271,7 @@ function renderStockTable() {
             </td>
             <td>${acqBlock}${dedBlock}</td>
             <td class="fw-bold fs-6 text-dark">${esc(stockDisplay)}</td>
+            <td>${subQtyUnitDisplay}</td>
             <td>${threshDisplay}</td>
             <td class="text-center text-nowrap" onclick="event.stopPropagation()">
                 <button class="btn btn-sm btn-outline-danger py-1 px-2 fw-semibold" onclick="openDeductModal('${esc(item.stockId)}')" title="Deduct Stock">
@@ -259,7 +283,7 @@ function renderStockTable() {
             </td>
         </tr>
         <tr class="detail-row ${isExpanded ? '' : 'd-none'}" id="detail_${esc(item.stockId)}">
-            <td colspan="5">
+            <td colspan="6">
                 <div class="d-flex justify-content-between align-items-center mb-2">
                     <span class="fw-bold small text-secondary"><i class="bi bi-clock-history"></i> Transaction History — ${esc(item.item)}</span>
                     <span class="small text-muted">${itemLogs.length} record(s)</span>
@@ -282,7 +306,7 @@ function renderStockTable() {
     });
 
     if (shown === 0) {
-        html = `<tr><td colspan="5" class="text-center p-4 text-muted">No stock items found.</td></tr>`;
+        html = `<tr><td colspan="6" class="text-center p-4 text-muted">No stock items found.</td></tr>`;
     }
     tbody.innerHTML = html;
 }
@@ -312,7 +336,7 @@ function openInsertFromReqModal() {
         const tag = l.status === "Closed" ? " [Closed]" : "";
         sel.innerHTML += `<option value="${esc(l.name)}">${esc(l.name + tag)}</option>`;
     });
-    document.getElementById('procModalBody').innerHTML = `<tr><td colspan="14" class="text-center p-3 text-muted">Select a requirement list above.</td></tr>`;
+    document.getElementById('procModalBody').innerHTML = `<tr><td colspan="16" class="text-center p-3 text-muted">Select a requirement list above.</td></tr>`;
     procRows = [];
     bootstrap.Modal.getOrCreateInstance(document.getElementById('insertReqModal')).show();
 }
@@ -321,7 +345,7 @@ async function loadReqListForProcurement() {
     const listName = document.getElementById('reqListDropdown').value;
     if (!listName) return;
     const tbody = document.getElementById('procModalBody');
-    tbody.innerHTML = `<tr><td colspan="14" class="text-center p-3"><i class="bi bi-hourglass-split"></i> Loading list items...</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="16" class="text-center p-3"><i class="bi bi-hourglass-split"></i> Loading list items...</td></tr>`;
 
     try {
         const payload = await apiPost({ action: "getListData", listName: listName });
@@ -332,12 +356,16 @@ async function loadReqListForProcurement() {
             const reqQty = parseFloat(r['Required Quantity']) || 0;
             const acqQty = parseFloat(r['Acquired Qty']) || 0;
             const remQty = Math.max(0, reqQty - acqQty);
+            const unitVal = String(r['Unit'] || 'Piece');
+            const pieceFlag = isPieceUnit(unitVal);
 
-            // Find existing stock record to prefill location/threshold if available
             const existingStock = stockItems.find(s =>
                 s.item.toLowerCase() === String(r['Item'] || '').trim().toLowerCase() &&
                 s.specs.toLowerCase() === String(r['Item Specs'] || '').trim().toLowerCase()
             );
+
+            const reqSubQty = pieceFlag ? '' : String(r['Sub Quantity'] || '');
+            const reqSubUnit = pieceFlag ? '' : String(r['Sub Unit'] || 'Piece');
 
             return {
                 selected: remQty > 0,
@@ -348,37 +376,53 @@ async function loadReqListForProcurement() {
                 code: String(r['Product Code'] || ''),
                 reqQty: reqQty,
                 acqQty: acqQty,
-                unit: String(r['Unit'] || 'Piece'),
-                subQty: String(r['Sub Quantity'] || ''),
+                unit: unitVal,
+                subQty: reqSubQty,
+                subUnit: reqSubUnit,
                 purchasedQty: remQty > 0 ? remQty : '',
-                purchasedSubQty: String(r['Sub Quantity'] || ''),
+                purchasedSubQty: reqSubQty,
+                purchasedSubUnit: pieceFlag ? '' : (reqSubUnit || (existingStock && existingStock.subLabel) || 'Piece'),
                 vendor: String(r['Selected Vendor'] || ''),
                 amount: r['Total Estimate'] || '',
                 refNo: '',
                 procDate: todayStr,
                 location: existingStock ? existingStock.location : '',
                 threshold: existingStock && existingStock.threshold > 0 ? existingStock.threshold : '',
-                thresholdType: existingStock ? existingStock.thresholdType : (String(r['Unit'] || 'Piece').toLowerCase() === 'piece' ? 'qty' : 'sub')
+                thresholdType: existingStock ? existingStock.thresholdType : (pieceFlag ? 'qty' : 'sub')
             };
         });
 
         renderProcModalRows();
     } catch (e) {
-        tbody.innerHTML = `<tr><td colspan="14" class="text-center text-danger p-3">Failed to load list items.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="16" class="text-center text-danger p-3">Failed to load list items.</td></tr>`;
+    }
+}
+
+function handleProcSubUnitChange(idx, sel) {
+    if (sel.value === "_NEW_") {
+        const u = prompt("Enter new sub-unit type (e.g. Piece, mL, g, Pair):");
+        if (u && u.trim()) {
+            procRows[idx].purchasedSubUnit = u.trim();
+        }
+        renderProcModalRows();
+    } else {
+        procRows[idx].purchasedSubUnit = sel.value;
     }
 }
 
 function renderProcModalRows() {
     const tbody = document.getElementById('procModalBody');
     if (procRows.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="14" class="text-center text-muted p-3">This list has no items.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="16" class="text-center text-muted p-3">This list has no items.</td></tr>`;
         return;
     }
 
     let html = "";
     procRows.forEach((r, idx) => {
-        const isPiece = r.unit.trim().toLowerCase() === "piece";
-        const fullyAcqTag = r.acqQty >= r.reqQty && r.reqQty > 0 ? `<div class="badge bg-success-subtle text-success">Acq: ${r.acqQty}</div>` : (r.acqQty > 0 ? `<div class="badge bg-warning-subtle text-dark">Acq: ${r.acqQty}</div>` : '');
+        const pieceFlag = isPieceUnit(r.unit);
+        const fullyAcqTag = r.acqQty >= r.reqQty && r.reqQty > 0
+            ? `<div class="badge bg-success-subtle text-success">Acq: ${r.acqQty}</div>`
+            : (r.acqQty > 0 ? `<div class="badge bg-warning-subtle text-dark">Acq: ${r.acqQty}</div>` : '');
 
         html += `<tr>
             <td class="text-center"><input type="checkbox" ${r.selected ? 'checked' : ''} onchange="procRows[${idx}].selected = this.checked"></td>
@@ -386,9 +430,15 @@ function renderProcModalRows() {
             <td class="small">${esc(r.specs)}</td>
             <td class="text-center fw-semibold">${r.reqQty} ${fullyAcqTag}</td>
             <td>${esc(r.unit)}</td>
-            <td class="small text-muted">${esc(r.subQty || '-')}</td>
+            <td class="small text-muted text-center">${pieceFlag ? '-' : esc(r.subQty || '-')}</td>
+            <td class="small text-muted text-center">${pieceFlag ? '-' : esc(r.subUnit || '-')}</td>
             <td><input type="number" step="0.01" min="0" class="form-control form-control-sm" value="${esc(r.purchasedQty)}" oninput="procRows[${idx}].purchasedQty = this.value"></td>
-            <td><input type="text" class="form-control form-control-sm" value="${isPiece ? '' : esc(r.purchasedSubQty)}" placeholder="${isPiece ? '-' : 'e.g. 500 pcs'}" ${isPiece ? 'disabled' : ''} oninput="procRows[${idx}].purchasedSubQty = this.value"></td>
+            <td><input type="number" step="any" min="0" class="form-control form-control-sm" value="${pieceFlag ? '' : esc(r.purchasedSubQty)}" placeholder="${pieceFlag ? '-' : '100'}" ${pieceFlag ? 'disabled' : ''} oninput="procRows[${idx}].purchasedSubQty = this.value"></td>
+            <td>
+                <select class="form-select form-select-sm" ${pieceFlag ? 'disabled' : ''} onchange="handleProcSubUnitChange(${idx}, this)">
+                    ${buildSubUnitOptions(r.purchasedSubUnit, pieceFlag)}
+                </select>
+            </td>
             <td><input type="text" class="form-control form-control-sm" value="${esc(r.vendor)}" oninput="procRows[${idx}].vendor = this.value"></td>
             <td><input type="number" step="0.01" class="form-control form-control-sm" placeholder="₹" value="${esc(r.amount)}" oninput="procRows[${idx}].amount = this.value"></td>
             <td>
@@ -407,9 +457,9 @@ function renderProcModalRows() {
             <td>
                 <div class="input-group input-group-sm">
                     <input type="number" min="0" class="form-control" placeholder="Min" value="${esc(r.threshold)}" oninput="procRows[${idx}].threshold = this.value">
-                    <select class="form-select" style="max-width:65px;" onchange="procRows[${idx}].thresholdType = this.value">
-                        <option value="qty" ${r.thresholdType === 'qty' ? 'selected' : ''}>Qty</option>
-                        ${!isPiece ? `<option value="sub" ${r.thresholdType === 'sub' ? 'selected' : ''}>Sub</option>` : ''}
+                    <select class="form-select" style="max-width:72px;" onchange="procRows[${idx}].thresholdType = this.value">
+                        <option value="qty" ${r.thresholdType === 'qty' ? 'selected' : ''}>${esc(r.unit)}</option>
+                        ${!pieceFlag ? `<option value="sub" ${r.thresholdType === 'sub' ? 'selected' : ''}>${esc(r.purchasedSubUnit || 'Sub')}</option>` : ''}
                     </select>
                 </div>
             </td>
@@ -441,7 +491,6 @@ function sortProcRows(mode) {
     procRows.sort((a, b) => {
         if (mode === 'vendor') return (a.vendor || "").localeCompare(b.vendor || "");
         if (mode === 'item') return (a.item || "").localeCompare(b.item || "");
-        // vendor_item
         const vCmp = (a.vendor || "").localeCompare(b.vendor || "");
         return vCmp !== 0 ? vCmp : (a.item || "").localeCompare(b.item || "");
     });
@@ -494,17 +543,15 @@ function openDeductModal(stockId) {
     document.getElementById('dedQtyInput').value = "";
     document.getElementById('dedPurpose').value = "";
 
-    // Populate user dropdown (defaults to logged-in user)
     const uSel = document.getElementById('dedTargetUser');
     const names = Array.from(new Set([USER.username, ...allUsernames]));
     uSel.innerHTML = names.map(u => `<option value="${esc(u)}" ${u === USER.username ? 'selected' : ''}>${esc(u)}${u === USER.username ? ' (You)' : ''}</option>`).join('');
 
-    // Populate unit mode dropdown (sub-unit vs pack unit)
     const mSel = document.getElementById('dedUnitMode');
     if (item.subPerUnit > 1) {
-        const subLbl = item.subLabel || "pcs";
+        const subLbl = item.subLabel || "Piece";
         mSel.innerHTML = `
-            <option value="base" selected>${esc(subLbl)} (Sub-Unit)</option>
+            <option value="base" selected>${esc(subLbl)} (Sub Unit)</option>
             <option value="pack">${esc(item.unit)} (${item.subPerUnit} ${esc(subLbl)}/${esc(item.unit)})</option>
         `;
     } else {
@@ -582,7 +629,6 @@ function initiateDeduction() {
         dateTime: dateTime
     };
 
-    // Check if deducting for another user and whether 2-min validation is active
     if (targetUser !== USER.username) {
         const expiry = proxyAuthCache[targetUser];
         if (!expiry || Date.now() >= expiry) {
@@ -614,7 +660,6 @@ async function verifyProxyAndDeduct() {
     try {
         const res = await apiPost({ action: "verifyProxyPassword", username: targetUser, password: pwd });
         if (res.status === "success") {
-            // Cache validation for 2 minutes
             proxyAuthCache[targetUser] = Date.now() + PROXY_AUTH_DURATION_MS;
             bootstrap.Modal.getInstance(document.getElementById('proxyPasswordModal')).hide();
             const toRun = pendingDeductionPayload;
@@ -643,7 +688,7 @@ async function executeDeduction(payload) {
         if (res.status === "success") {
             const modal = bootstrap.Modal.getInstance(document.getElementById('deductModal'));
             if (modal) modal.hide();
-            expandedStockIds.add(payload.stockId); // Auto-expand so user sees the new ledger record
+            expandedStockIds.add(payload.stockId);
             await loadStockData();
         } else {
             alert(res.message || "Deduction failed.");
@@ -671,8 +716,8 @@ function openEditStockMeta(stockId) {
     const tSel = document.getElementById('metaThresholdType');
     if (item.subPerUnit > 1) {
         tSel.innerHTML = `
-            <option value="sub" ${item.thresholdType === 'sub' ? 'selected' : ''}>${esc(item.subLabel || 'pcs')} (Sub Qty)</option>
-            <option value="qty" ${item.thresholdType === 'qty' ? 'selected' : ''}>${esc(item.unit)} (Main Qty)</option>
+            <option value="sub" ${item.thresholdType === 'sub' ? 'selected' : ''}>${esc(item.subLabel || 'Piece')} (Sub Unit)</option>
+            <option value="qty" ${item.thresholdType === 'qty' ? 'selected' : ''}>${esc(item.unit)} (Main Unit)</option>
         `;
     } else {
         tSel.innerHTML = `<option value="qty" selected>${esc(item.unit)}</option>`;
