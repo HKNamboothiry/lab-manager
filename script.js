@@ -575,12 +575,18 @@ function renderTable() {
             const subUnitVal = pieceFlag ? '' : (row['Sub Unit'] || 'Piece');
 
             if (!row._isEditing) {
+                const isLocked = (g.key === 'acquired');
                 let selVendor = row['Selected Vendor'] || '';
                 let acqBadgeClass = acqQty >= reqQty && reqQty > 0 ? 'text-success fw-bold' : (acqQty > 0 ? 'text-warning fw-bold' : 'text-muted');
 
                 let vendorCells = activeVendors.map(v => {
                     let vPrice = row[v] ?? '';
                     let isNA = vPrice === 'NA';
+                    if (isLocked) {
+                        let txt = isNA ? '<span class="text-muted">NA</span>' : (vPrice !== '' ? `₹${parseFloat(vPrice).toFixed(2)}` : '-');
+                        let cls = (selVendor === v) ? 'fw-bold text-primary' : 'text-muted';
+                        return `<td class="vendor-cell text-center ${cls}">${txt}</td>`;
+                    }
                     let isChecked = (selVendor === v) ? 'checked' : '';
                     let valToDisplay = isNA ? '' : vPrice;
                     let safeV = v.replace(/'/g, "\\'");
@@ -593,13 +599,35 @@ function renderTable() {
                     </td>`;
                 }).join('');
 
+                const actionCellHtml = isLocked
+                    ? `<span class="badge bg-success-subtle text-success border border-success-subtle" title="Completely Acquired (Locked)"><i class="bi bi-lock-fill"></i> Acquired</span>`
+                    : `<button class="btn btn-sm btn-outline-primary py-0 px-1" onclick="editRow(${i})" title="Edit" ${closed ? 'disabled' : ''}><i class="bi bi-pencil-square"></i></button>
+                       <button class="btn btn-sm btn-outline-secondary py-0 px-1 ms-1" onclick="duplicateRow(${i})" title="Duplicate Row" ${closed ? 'disabled' : ''}><i class="bi bi-copy"></i></button>
+                       <button class="btn btn-sm btn-outline-danger py-0 px-1 ms-1" onclick="deleteRow(${i})" title="Delete" ${closed ? 'disabled' : ''}><i class="bi bi-trash"></i></button>`;
+
+                const reqQtyCell = isLocked
+                    ? `<td class="text-center fw-semibold">${esc(row['Required Quantity'])}</td>`
+                    : `<td><input type="number" class="form-control form-control-sm number-box" value="${esc(row['Required Quantity'])}" min="1" onchange="updateLiveRow(${i}, 'Required Quantity', this.value)" ${closed ? 'disabled' : ''}></td>`;
+
+                const unitCell = isLocked
+                    ? `<td class="text-center">${esc(unitVal)}</td>`
+                    : `<td><select class="form-select form-select-sm number-box" onchange="updateLiveUnit(${i}, this)" ${closed ? 'disabled' : ''}>${buildUnitOptions(unitVal)}</select></td>`;
+
+                const subQtyCell = isLocked
+                    ? `<td class="text-center">${pieceFlag ? '-' : esc(row['Sub Quantity'] || '-')}</td>`
+                    : `<td><input type="number" step="any" min="0" id="liveSubQty_${i}" class="form-control form-control-sm number-box" value="${pieceFlag ? '' : esc(row['Sub Quantity'])}" placeholder="${pieceFlag ? '-' : '100'}" onchange="updateLiveRow(${i}, 'Sub Quantity', this.value)" ${(pieceFlag || closed) ? 'disabled' : ''}></td>`;
+
+                const subUnitCell = isLocked
+                    ? `<td class="text-center">${pieceFlag ? '-' : esc(subUnitVal || '-')}</td>`
+                    : `<td><select id="liveSubUnit_${i}" class="form-select form-select-sm sub-unit-box" onchange="updateLiveSubUnit(${i}, this)" ${(pieceFlag || closed) ? 'disabled' : ''}>${buildSubUnitOptions(subUnitVal, pieceFlag)}</select></td>`;
+
+                const estPriceCell = isLocked
+                    ? `<td class="text-center">${row['Estimated Price'] !== '' && row['Estimated Price'] !== undefined ? '₹' + esc(row['Estimated Price']) : '-'}</td>`
+                    : `<td><input type="number" step="0.01" class="form-control form-control-sm number-box" value="${esc(row['Estimated Price'])}" onchange="updateLiveRow(${i}, 'Estimated Price', this.value)" ${closed ? 'disabled' : ''}></td>`;
+
                 rowsHTML += `<tr data-group="${g.key}">
                     <td class="sticky-col-0">${displayIdx + 1}</td>
-                    <td class="sticky-col-1 text-center text-nowrap">
-                        <button class="btn btn-sm btn-outline-primary py-0 px-1" onclick="editRow(${i})" title="Edit" ${closed ? 'disabled' : ''}><i class="bi bi-pencil-square"></i></button>
-                        <button class="btn btn-sm btn-outline-secondary py-0 px-1 ms-1" onclick="duplicateRow(${i})" title="Duplicate Row" ${closed ? 'disabled' : ''}><i class="bi bi-copy"></i></button>
-                        <button class="btn btn-sm btn-outline-danger py-0 px-1 ms-1" onclick="deleteRow(${i})" title="Delete" ${closed ? 'disabled' : ''}><i class="bi bi-trash"></i></button>
-                    </td>
+                    <td class="sticky-col-1 text-center text-nowrap">${actionCellHtml}</td>
                     <td class="sticky-col-2 fw-bold">${esc(row['Item'])}</td>
                     <td class="sticky-col-3 specs-col text-wrap">
                         <div>${esc(row['Item Specs'])}</div>
@@ -607,36 +635,18 @@ function renderTable() {
                     </td>
                     <td>${esc(row['Preferred Company'])}</td>
                     <td>${esc(row['Product Code'])}</td>
-
-                    <td><input type="number" class="form-control form-control-sm number-box" value="${esc(row['Required Quantity'])}" min="1" onchange="updateLiveRow(${i}, 'Required Quantity', this.value)" ${closed ? 'disabled' : ''}></td>
-                    <td>
-                        <select class="form-select form-select-sm number-box" onchange="updateLiveUnit(${i}, this)" ${closed ? 'disabled' : ''}>
-                            ${buildUnitOptions(unitVal)}
-                        </select>
-                    </td>
-                    <td>
-                        <input type="number" step="any" min="0" id="liveSubQty_${i}" class="form-control form-control-sm number-box"
-                               value="${pieceFlag ? '' : esc(row['Sub Quantity'])}"
-                               placeholder="${pieceFlag ? '-' : '100'}"
-                               onchange="updateLiveRow(${i}, 'Sub Quantity', this.value)"
-                               ${(pieceFlag || closed) ? 'disabled' : ''}>
-                    </td>
-                    <td>
-                        <select id="liveSubUnit_${i}" class="form-select form-select-sm sub-unit-box"
-                                onchange="updateLiveSubUnit(${i}, this)"
-                                ${(pieceFlag || closed) ? 'disabled' : ''}>
-                            ${buildSubUnitOptions(subUnitVal, pieceFlag)}
-                        </select>
-                    </td>
+                    ${reqQtyCell}
+                    ${unitCell}
+                    ${subQtyCell}
+                    ${subUnitCell}
                     <td class="text-center ${acqBadgeClass}">${acqQty || 0}</td>
                     <td class="text-center small text-muted">${esc(row['Acquired Sub Qty'] || '-')}</td>
                     <td class="text-center small text-muted">${esc(row['Acquired Sub Unit'] || '-')}</td>
-                    <td><input type="number" step="0.01" class="form-control form-control-sm number-box" value="${esc(row['Estimated Price'])}" onchange="updateLiveRow(${i}, 'Estimated Price', this.value)" ${closed ? 'disabled' : ''}></td>
-
+                    ${estPriceCell}
                     <td class="fw-bold text-primary">${esc(selVendor)}</td>
                     <td class="fw-bold text-success" id="rowTotal_${i}">₹${totalEst.toFixed(2)}</td>
                     <td class="small text-nowrap">${esc(row['Bill Ref No'] || '-')}</td>
-                    <td class="small text-nowrap">${esc(row['Date of Procurement'] || '-')}</td>
+                    <td class="small text-nowrap">${esc(formatDateOnly(row['Date of Procurement']) || '-')}</td>
                     ${vendorCells}
                 </tr>`;
             } else {
@@ -895,7 +905,7 @@ function toggleVendorNA(i, v) {
 
 function optimizeVendors() {
     currentListData.forEach(row => {
-        if (row._isEditing) return;
+        if (row._isEditing || getRowGroupKey(row) === 'acquired') return;
         let bestVendor = '';
         let minPrice = Infinity;
         activeVendors.forEach(v => {
@@ -1427,6 +1437,7 @@ function executeExport() {
                 if (col === "SL No") obj[col] = index + 1;
                 else if (col === "Unit Price" && vendorName) obj[col] = row[vendorName] || "";
                 else if (col === "Vendor Unit Price" || col === "Vendor Total") obj[col] = "";
+                else if (col === "Date of Procurement") obj[col] = formatDateOnly(row[col]);
                 else obj[col] = row[col] !== undefined ? row[col] : "";
             });
             return obj;
@@ -1601,25 +1612,29 @@ function executeExport() {
 function formatNowTimestamp() {
     const d = new Date();
     const pad = n => String(n).padStart(2, '0');
-    return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+    return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
 }
 
-function getRowUnitPrice(row) {
-    const sv = (row['Selected Vendor'] || '').trim();
-    if (sv && row[sv] !== undefined && row[sv] !== '' && row[sv] !== 'NA') {
-        const p = parseFloat(row[sv]);
-        if (!isNaN(p)) return p;
+function formatDateOnly(val) {
+    const s = String(val || "").trim();
+    if (!s) return "";
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
+        const p = s.slice(0, 10).split("-");
+        return `${p[2]}/${p[1]}/${p[0]}`;
     }
-    const est = parseFloat(row['Estimated Price']);
-    return isNaN(est) ? 0 : est;
+    if (/^\d{2}\/\d{2}\/\d{4}/.test(s)) return s.slice(0, 10);
+    return s;
 }
 
 function computeProcurementSubTotal() {
     const cleanRows = currentListData.filter(r => !r._isEditing);
     return cleanRows.reduce((sum, r) => {
         const reqQty = parseFloat(r['Required Quantity']) || 0;
-        const unitPrice = getRowUnitPrice(r);
-        return sum + (reqQty * unitPrice);
+        const acqQty = parseFloat(r['Acquired Qty']) || 0;
+        if (reqQty > 0 && acqQty >= reqQty) {
+            return sum + (parseFloat(r['Total Estimate']) || 0);
+        }
+        return sum;
     }, 0);
 }
 
@@ -1673,7 +1688,6 @@ async function openProcurementSummaryModal() {
     document.getElementById('sumListName').innerText = listName;
     document.getElementById('sumPreparedBy').innerText = `${USER.username} (${USER.role})`;
 
-    // Load saved Additional Expenses from List_Meta
     try {
         const rawExp = listMeta && listMeta.additionalExpenses ? listMeta.additionalExpenses : "[]";
         summaryExpenses = Array.isArray(rawExp) ? rawExp : JSON.parse(rawExp);
@@ -1683,10 +1697,10 @@ async function openProcurementSummaryModal() {
     }
 
     const cleanRows = currentListData.filter(r => !r._isEditing);
-    const procDates = cleanRows.map(r => (r['Date of Procurement'] || '').trim()).filter(Boolean);
+    const procDates = cleanRows.map(r => formatDateOnly(r['Date of Procurement'])).filter(Boolean);
     const lastProcGuess = procDates.length > 0 ? procDates[procDates.length - 1] : "";
 
-    document.getElementById('sumListCreatedDate').value = (listMeta && listMeta.createdDate) ? listMeta.createdDate : "";
+    document.getElementById('sumListCreatedDate').value = (listMeta && listMeta.createdDate) ? formatDateOnly(listMeta.createdDate) : "";
     document.getElementById('sumLastProcDate').value = lastProcGuess;
 
     renderExpenseRows();
@@ -1709,7 +1723,7 @@ async function saveProcurementExpenses(showAlert = false) {
         .map(e => ({ label: (e.label || "").trim(), amount: e.amount !== "" ? (parseFloat(e.amount) || 0) : "" }))
         .filter(e => e.label !== "" || (e.amount !== "" && e.amount > 0));
 
-    const createdDateVal = (document.getElementById('sumListCreatedDate').value || "").trim();
+    const createdDateVal = formatDateOnly(document.getElementById('sumListCreatedDate').value);
     const btn = document.getElementById('btnSaveExpenses');
     if (btn && showAlert) { btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Saving...'; btn.disabled = true; }
 
@@ -1769,21 +1783,27 @@ function buildProcurementReportModel() {
     const nowStr = formatNowTimestamp();
     const preparedBy = `${USER.username} (${USER.role})`;
 
-    const createdOverride = (document.getElementById('sumListCreatedDate').value || "").trim();
-    const lastProcOverride = (document.getElementById('sumLastProcDate').value || "").trim();
+    const createdOverride = formatDateOnly(document.getElementById('sumListCreatedDate').value);
+    const lastProcOverride = formatDateOnly(document.getElementById('sumLastProcDate').value);
 
     const cleanRows = currentListData.filter(r => !r._isEditing);
     const ledgerListDates = cachedLedgerForSummary
         .filter(l => l.sourceList === listName && l.type === "Acquirement" && l.dateTime)
-        .map(l => l.dateTime);
-    const rowProcDates = cleanRows.map(r => (r['Date of Procurement'] || '').trim()).filter(Boolean);
+        .map(l => formatDateOnly(l.dateTime));
+    const rowProcDates = cleanRows.map(r => formatDateOnly(r['Date of Procurement'])).filter(Boolean);
     const lastProcDate = lastProcOverride || (ledgerListDates.length ? ledgerListDates[ledgerListDates.length - 1] : (rowProcDates.length ? rowProcDates[rowProcDates.length - 1] : "N/A"));
     const createdDate = createdOverride || "N/A";
 
     let hasIncompleteItem = false;
     let subTotal = 0;
 
-    const procTableRows = cleanRows.map((row, idx) => {
+    const groupedBuckets = {
+        acquired: { title: "Completely Acquired", rows: [] },
+        partly:   { title: "Partially Acquired", rows: [] },
+        pending:  { title: "Pending Deliveries/ Purchases", rows: [] }
+    };
+
+    cleanRows.forEach(row => {
         const itemName = String(row['Item'] || '').trim();
         const specs = String(row['Item Specs'] || '').trim();
         const prefComp = String(row['Preferred Company'] || '').trim();
@@ -1799,21 +1819,30 @@ function buildProcurementReportModel() {
         const acqSubQty = String(row['Acquired Sub Qty'] || '').trim();
         const acqSubUnit = String(row['Acquired Sub Unit'] || '').trim();
 
-        const isIncomplete = reqQty > 0 ? (acqQty < reqQty) : (acqQty === 0);
-        if (isIncomplete) hasIncompleteItem = true;
-        const star = isIncomplete ? "*" : "";
+        const isComplete = reqQty > 0 && acqQty >= reqQty;
+        const isPartly = acqQty > 0 && acqQty < reqQty;
+        const groupKey = isComplete ? 'acquired' : (isPartly ? 'partly' : 'pending');
+
+        if (!isComplete) hasIncompleteItem = true;
+        const star = !isComplete ? "*" : "";
 
         const vendor = String(row['Selected Vendor'] || '').trim();
         const billNo = String(row['Bill Ref No'] || '').trim();
-        const unitAmt = getRowUnitPrice(row);
-        const rowAmt = reqQty * unitAmt;
-        subTotal += rowAmt;
+
+        let unitAmtStr = "-";
+        let rowAmtStr = "-";
+        if (isComplete) {
+            const totalAmt = parseFloat(row['Total Estimate']) || 0;
+            const unitAmt = acqQty > 0 ? (totalAmt / acqQty) : 0;
+            subTotal += totalAmt;
+            unitAmtStr = unitAmt.toFixed(2);
+            rowAmtStr = totalAmt.toFixed(2);
+        }
 
         const reqSubLine = (!isPieceUnit(unit) && subQty && subUnit) ? `${subQty} ${subUnit}/${unit}` : "";
         const aqSubLine = (!isPieceUnit(unit) && acqSubQty && acqSubUnit) ? `${acqSubQty} ${acqSubUnit}/${unit}` : "";
 
-        return {
-            slNo: idx + 1,
+        groupedBuckets[groupKey].rows.push({
             particularHtml: buildParticularText(itemName, specs, prefComp, code, refLink),
             particularPlain: buildParticularPlain(itemName, specs, prefComp, code, refLink),
             reqMain: `${reqQty} ${unit}`,
@@ -1822,10 +1851,19 @@ function buildProcurementReportModel() {
             aqSub: aqSubLine,
             vendorMain: vendor || "-",
             vendorSub: billNo ? `Bill: ${billNo}` : "",
-            unitAmount: unitAmt.toFixed(2),
-            rowAmount: rowAmt.toFixed(2)
-        };
+            unitAmount: unitAmtStr,
+            rowAmount: rowAmtStr,
+            showPrice: isComplete
+        });
     });
+
+    let slCounter = 1;
+    const procGroups = [groupedBuckets.acquired, groupedBuckets.partly, groupedBuckets.pending]
+        .filter(g => g.rows.length > 0)
+        .map(g => {
+            g.rows.forEach(r => { r.slNo = slCounter++; });
+            return g;
+        });
 
     const validExpenses = summaryExpenses
         .map(e => ({ label: (e.label || "Additional Expense").trim(), amount: parseFloat(e.amount) || 0 }))
@@ -1863,8 +1901,8 @@ function buildProcurementReportModel() {
         const beforeQty = hasSub ? Math.floor(beforeBase / subPerUnit) : beforeBase;
         const afterQty = hasSub ? Math.floor(afterBase / subPerUnit) : afterBase;
 
-        const beforeSubStr = hasSub ? `${Number((beforeBase % subPerUnit).toFixed(2))} ${subLabel}` : "-";
-        const afterSubStr = hasSub ? `${Number((afterBase % subPerUnit).toFixed(2))} ${subLabel}` : "-";
+        const beforeSubStr = hasSub ? `${beforeBase} ${subLabel}` : "-";
+        const afterSubStr = hasSub ? `${afterBase} ${subLabel}` : "-";
 
         const threshVal = matchedStock ? (parseFloat(matchedStock.threshold) || 0) : 0;
         const threshUnit = matchedStock && matchedStock.thresholdType === 'sub' && hasSub ? subLabel : unit;
@@ -1889,7 +1927,7 @@ function buildProcurementReportModel() {
         lastProcDate,
         prepDate: nowStr,
         preparedBy,
-        procTableRows,
+        procGroups,
         subTotal,
         validExpenses,
         expensesTotal,
@@ -1910,26 +1948,30 @@ function printProcurementSummary() {
     const inst = bootstrap.Modal.getInstance(modalEl);
     if (inst) inst.hide();
 
-    const procRowsHtml = m.procTableRows.map(r => `
-        <tr>
-            <td class="text-center">${r.slNo}</td>
-            <td>${r.particularHtml}</td>
-            <td class="text-center">
-                <div>${esc(r.reqMain)}</div>
-                ${r.reqSub ? `<div class="fst-italic small text-muted">${esc(r.reqSub)}</div>` : ''}
-            </td>
-            <td class="text-center">
-                <div>${esc(r.aqMain)}</div>
-                ${r.aqSub ? `<div class="fst-italic small text-muted">${esc(r.aqSub)}</div>` : ''}
-            </td>
-            <td>
-                <div>${esc(r.vendorMain)}</div>
-                ${r.vendorSub ? `<div class="fst-italic small text-muted">${esc(r.vendorSub)}</div>` : ''}
-            </td>
-            <td class="text-end">₹${r.unitAmount}</td>
-            <td class="text-end">₹${r.rowAmount}</td>
-        </tr>
-    `).join('');
+    const procRowsHtml = m.procGroups.map(g => {
+        const headerRow = `<tr style="background:#e9ecef;"><td colspan="7"><strong>${esc(g.title)} (${g.rows.length})</strong></td></tr>`;
+        const itemRows = g.rows.map(r => `
+            <tr>
+                <td class="text-center">${r.slNo}</td>
+                <td>${r.particularHtml}</td>
+                <td class="text-center">
+                    <div>${esc(r.reqMain)}</div>
+                    ${r.reqSub ? `<div class="fst-italic small text-muted">${esc(r.reqSub)}</div>` : ''}
+                </td>
+                <td class="text-center">
+                    <div>${esc(r.aqMain)}</div>
+                    ${r.aqSub ? `<div class="fst-italic small text-muted">${esc(r.aqSub)}</div>` : ''}
+                </td>
+                <td>
+                    <div>${esc(r.vendorMain)}</div>
+                    ${r.vendorSub ? `<div class="fst-italic small text-muted">${esc(r.vendorSub)}</div>` : ''}
+                </td>
+                <td class="text-end">${r.showPrice ? '₹' + r.unitAmount : '-'}</td>
+                <td class="text-end">${r.showPrice ? '₹' + r.rowAmount : '-'}</td>
+            </tr>
+        `).join('');
+        return headerRow + itemRows;
+    }).join('');
 
     const expensesHtml = m.validExpenses.map(e => `
         <tr>
@@ -2098,15 +2140,23 @@ function downloadProcurementSummaryPdf() {
     doc.setLineWidth(0.5);
     doc.line(14, 38, pageW - 14, 38);
 
-    const procBody = m.procTableRows.map(r => [
-        r.slNo,
-        r.particularPlain,
-        r.reqSub ? `${r.reqMain}\n${r.reqSub}` : r.reqMain,
-        r.aqSub ? `${r.aqMain}\n${r.aqSub}` : r.aqMain,
-        r.vendorSub ? `${r.vendorMain}\n${r.vendorSub}` : r.vendorMain,
-        `Rs. ${r.unitAmount}`,
-        `Rs. ${r.rowAmount}`
-    ]);
+    const procBody = [];
+    m.procGroups.forEach(g => {
+        procBody.push([
+            { content: `${g.title} (${g.rows.length})`, colSpan: 7, styles: { fontStyle: 'bold', fillColor: [233, 236, 239], textColor: [33, 37, 41] } }
+        ]);
+        g.rows.forEach(r => {
+            procBody.push([
+                r.slNo,
+                r.particularPlain,
+                r.reqSub ? `${r.reqMain}\n${r.reqSub}` : r.reqMain,
+                r.aqSub ? `${r.aqMain}\n${r.aqSub}` : r.aqMain,
+                r.vendorSub ? `${r.vendorMain}\n${r.vendorSub}` : r.vendorMain,
+                r.showPrice ? `Rs. ${r.unitAmount}` : "-",
+                r.showPrice ? `Rs. ${r.rowAmount}` : "-"
+            ]);
+        });
+    });
 
     procBody.push([
         { content: "Sub Total", colSpan: 6, styles: { halign: 'right', fontStyle: 'bold' } },
