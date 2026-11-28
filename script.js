@@ -674,9 +674,30 @@ function toggleGroup(groupKey) {
     renderTable();
 }
 
+function hasCompleteBill(row) {
+    const billNo = String(row['Bill Ref No'] || '').trim();
+    const billDate = String(row['Bill Date'] || '').trim();
+    const billAmt = parseFloat(row['Bill Amount']);
+    return !!(billNo && billDate && !isNaN(billAmt) && billAmt > 0);
+}
+
+function recalculateRowTotalEstimate(row) {
+    if (hasCompleteBill(row)) {
+        row['Total Estimate'] = parseFloat(row['Bill Amount']).toFixed(2);
+        return;
+    }
+    const sv = row['Selected Vendor'];
+    if (sv && row[sv] && row[sv] !== 'NA') {
+        const price = parseFloat(row[sv]) || 0;
+        const qty = parseFloat(row['Required Quantity']) || 0;
+        row['Total Estimate'] = (price * qty).toFixed(2);
+    } else {
+        row['Total Estimate'] = '';
+    }
+}
+
 function getRowEffectiveAmount(row) {
-    const bAmt = parseFloat(row['Bill Amount']);
-    if (!isNaN(bAmt) && bAmt > 0) return bAmt;
+    if (hasCompleteBill(row)) return parseFloat(row['Bill Amount']);
     return parseFloat(row['Total Estimate']) || 0;
 }
 
@@ -890,12 +911,7 @@ function renderTable() {
 
 function updateLiveBillField(i, field, val) {
     currentListData[i][field] = val;
-    if (field === 'Bill Amount') {
-        const amt = parseFloat(val);
-        if (!isNaN(amt) && amt > 0) {
-            currentListData[i]['Total Estimate'] = amt.toFixed(2);
-        }
-    }
+    recalculateRowTotalEstimate(currentListData[i]);
     renderTable();
 }
 
