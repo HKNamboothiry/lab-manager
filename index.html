@@ -220,10 +220,15 @@
         </div>
 
         <!-- Bottom Cost Breakdown & Budget Bar -->
+<!-- Bottom Cost Breakdown & Budget Bar -->
         <div class="glass-bottom">
             <div class="row align-items-center text-center g-2">
                 <div class="col-6 col-md-2 border-end border-success">
-                    <small class="text-success fw-semibold d-block">Item Expenditure</small>
+                    <small class="text-secondary fw-semibold d-block">Estimated Total</small>
+                    <h6 id="estimatedTotalDisplay" class="text-secondary fw-bold mb-0">₹0.00</h6>
+                </div>
+                <div class="col-6 col-md-2 border-end border-success">
+                    <small class="text-success fw-semibold d-block">Billed Items</small>
                     <h6 id="itemCostDisplay" class="text-body fw-bold mb-0">₹0.00</h6>
                 </div>
                 <div class="col-6 col-md-2 border-end border-success">
@@ -231,17 +236,17 @@
                     <h6 id="nonItemCostDisplay" class="text-body fw-bold mb-0">₹0.00</h6>
                 </div>
                 <div class="col-6 col-md-2 border-end border-success">
-                    <small class="text-success fw-semibold d-block">Total Expenditure</small>
+                    <small class="text-success fw-semibold d-block">Total Spent</small>
                     <h5 id="totalBudget" class="text-body fw-bold mb-0">₹0.00</h5>
                 </div>
-                <div class="col-6 col-md-3 border-end border-success">
+                <div class="col-6 col-md-2 border-end border-success">
                     <small class="text-success fw-semibold d-block">Budget Assigned (₹)</small>
                     <div class="d-flex justify-content-center align-items-center">
-                        <input type="number" class="form-control form-control-sm text-center fw-bold w-50 bg-body" id="budgetInHand" disabled>
+                        <input type="number" class="form-control form-control-sm text-center fw-bold w-75 bg-body" id="budgetInHand" disabled>
                         <button class="btn btn-sm btn-outline-success ms-1" id="btnUpdateBudget" onclick="updateBudget()" style="display:none;"><i class="bi bi-check-lg"></i></button>
                     </div>
                 </div>
-                <div class="col-12 col-md-3">
+                <div class="col-6 col-md-2">
                     <small class="text-success fw-semibold d-block">Balance</small>
                     <h5 id="budgetBalance" class="text-body fw-bold mb-0">₹0.00</h5>
                 </div>
