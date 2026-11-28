@@ -10,16 +10,16 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
     <style>
-        :root { --glass-bg: rgba(255, 255, 255, 0.78); --glass-bottom-bg: rgba(232, 245, 233, 0.85); --glass-blur: blur(12px); --body-grad: linear-gradient(135deg, #fdfbfb 0%, #ebedee 100%); --login-grad: linear-gradient(135deg, #e3f2fd, #bbdefb); --login-card-bg: rgba(255, 255, 255, 0.65); --cell-bg: #ffffff; --cell-hover: #ececec; }
-        body { background: var(--body-grad); font-size: 0.95rem; min-height: 100vh; margin: 0; }
-        #appContainer { display: none; padding-bottom: 105px; }
+        :root { --glass-bg: rgba(255, 255, 255, 0.78); --glass-bottom-bg: rgba(232, 245, 233, 0.90); --glass-blur: blur(12px); --body-grad: linear-gradient(135deg, #fdfbfb 0%, #ebedee 100%); --login-grad: linear-gradient(135deg, #e3f2fd, #bbdefb); --login-card-bg: rgba(255, 255, 255, 0.65); --cell-bg: #ffffff; --cell-hover: #ececec; }
+        body { background: var(--body-grad); font-size: 0.94rem; min-height: 100vh; margin: 0; }
+        #appContainer { display: none; padding-bottom: 115px; }
         .login-wrapper { position: relative; height: 100vh; display: flex; align-items: center; justify-content: center; overflow: hidden; background: var(--login-grad); }
         .login-card { position: relative; z-index: 2; background: var(--login-card-bg); backdrop-filter: var(--glass-blur); padding: 40px; border-radius: 16px; box-shadow: 0 8px 32px rgba(0,0,0,0.1); width: 100%; max-width: 400px; }
         .glass-top { position: sticky; top: 0; z-index: 1040; background: var(--glass-bg) !important; backdrop-filter: var(--glass-blur); border-bottom: 1px solid rgba(0,0,0,0.06); box-shadow: 0 4px 6px rgba(0,0,0,0.02); }
-        .glass-bottom { position: fixed; bottom: 0; left: 0; right: 0; z-index: 1040; background: var(--glass-bottom-bg); backdrop-filter: var(--glass-blur); border-top: 1px solid rgba(0,0,0,0.08); padding: 12px 15px; box-shadow: 0 -4px 6px rgba(0,0,0,0.03); }
+        .glass-bottom { position: fixed; bottom: 0; left: 0; right: 0; z-index: 1040; background: var(--glass-bottom-bg); backdrop-filter: var(--glass-blur); border-top: 1px solid rgba(0,0,0,0.08); padding: 10px 15px; box-shadow: 0 -4px 6px rgba(0,0,0,0.03); }
         .nav-user { line-height: 1.2; border-left: 2px solid #6c757d; padding-left: 15px; }
 
-        .table-responsive { background: var(--cell-bg); border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); max-height: calc(100vh - 295px); overflow: auto; }
+        .table-responsive { background: var(--cell-bg); border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); max-height: calc(100vh - 340px); overflow: auto; }
         th { white-space: nowrap; }
         .specs-col { min-width: 250px; }
 
@@ -27,8 +27,8 @@
         thead th { position: sticky; top: 0; z-index: 2; background-color: #212529 !important; color: white; }
         .sticky-col-0 { position: sticky; left: 0px;   min-width: 50px;  max-width: 50px;  z-index: 1; }
         .sticky-col-1 { position: sticky; left: 50px;  min-width: 105px; max-width: 105px; z-index: 1; }
-        .sticky-col-2 { position: sticky; left: 155px; min-width: 180px; max-width: 180px; z-index: 1; }
-        .sticky-col-3 { position: sticky; left: 335px; min-width: 250px; max-width: 250px; z-index: 1; border-right: 2px solid #6c757d; }
+        .sticky-col-2 { position: sticky; left: 155px; min-width: 185px; max-width: 185px; z-index: 1; }
+        .sticky-col-3 { position: sticky; left: 340px; min-width: 250px; max-width: 250px; z-index: 1; border-right: 2px solid #6c757d; }
 
         thead .sticky-col-0, thead .sticky-col-1, thead .sticky-col-2, thead .sticky-col-3 { z-index: 3 !important; }
         tbody tr td.sticky-col-0, tbody tr td.sticky-col-1, tbody tr td.sticky-col-2, tbody tr td.sticky-col-3 { background-color: var(--cell-bg); }
@@ -46,12 +46,35 @@
         /* Group Row Background Colors */
         tbody tr[data-group="toAcquire"]:not(.table-warning) td { background-color: #ffffff; }
         tbody tr[data-group="toAcquire"]:not(.table-warning):hover td { background-color: var(--cell-hover); }
-
         tbody tr[data-group="acquired"]:not(.table-warning) td { background-color: #edf7f0 !important; }
         tbody tr[data-group="acquired"]:not(.table-warning):hover td { background-color: #dff0e4 !important; }
-
         tbody tr[data-group="partly"]:not(.table-warning) td { background-color: #fffbe6 !important; }
         tbody tr[data-group="partly"]:not(.table-warning):hover td { background-color: #fdf3cc !important; }
+
+        /* P / Q / B / D Status Toggle Group */
+        .pqbd-group { display: inline-flex; gap: 3px; margin-top: 4px; }
+        .pqbd-btn {
+            font-size: 0.7rem; font-weight: 700; width: 22px; height: 20px; padding: 0;
+            border-radius: 4px; border: 1px solid #ced4da; background: #f8f9fa; color: #6c757d;
+            line-height: 18px; text-align: center; cursor: pointer;
+        }
+        .pqbd-btn:disabled { cursor: not-allowed; opacity: 0.45; }
+        .pqbd-btn.active-P { background: #6c757d; color: #fff; border-color: #6c757d; opacity: 1; }
+        .pqbd-btn.active-Q { background: #0dcaf0; color: #000; border-color: #0dcaf0; opacity: 1; }
+        .pqbd-btn.active-B { background: #0d6efd; color: #fff; border-color: #0d6efd; opacity: 1; }
+        .pqbd-btn.active-D { background: #198754; color: #fff; border-color: #198754; opacity: 1; }
+
+        /* Multi-List Toggle Pills in Export Modals */
+        .list-pill-wrap { display: flex; flex-wrap: wrap; gap: 6px; }
+        .list-pill {
+            cursor: pointer; user-select: none; padding: 4px 10px; border-radius: 20px;
+            font-size: 0.82rem; font-weight: 600; border: 1px solid #adb5bd; background: #f8f9fa; color: #495057;
+            transition: all 0.15s ease;
+        }
+        .list-pill.active { background: #0d6efd; color: #fff; border-color: #0d6efd; }
+
+        /* Non-Item Bills Card */
+        .non-item-card { background: #fff; border-radius: 8px; border: 1px solid rgba(0,0,0,0.08); box-shadow: 0 2px 4px rgba(0,0,0,0.04); }
 
         /* Single-line 10pt italic Reference Link */
         .ref-line {
@@ -64,6 +87,7 @@
 
         .number-box { width: 85px; padding: 0.25rem; }
         .sub-unit-box { width: 95px; padding: 0.25rem; }
+        .bill-box { width: 115px; padding: 0.25rem; }
         .vendor-cell { min-width: 155px; }
         #invTable thead th { position: static; z-index: auto; background-color: #e9ecef !important; color: #000; }
 
@@ -97,10 +121,9 @@
                 <div class="dropdown">
                     <button class="btn btn-sm btn-success dropdown-toggle shadow-sm" type="button" data-bs-toggle="dropdown"><i class="bi bi-box-arrow-right"></i> Export</button>
                     <ul class="dropdown-menu">
-                        <li><a class="dropdown-item" href="#" onclick="openExportModal('excel')"><i class="bi bi-file-earmark-excel"></i> Excel File</a></li>
-                        <li><a class="dropdown-item" href="#" onclick="openExportModal('csv')"><i class="bi bi-filetype-csv"></i> CSV File</a></li>
-                        <li><a class="dropdown-item" href="#" onclick="openExportModal('pdf')"><i class="bi bi-file-earmark-pdf"></i> PDF Document</a></li>
-                        <li><a class="dropdown-item" href="#" onclick="openExportModal('print')"><i class="bi bi-printer"></i> Print</a></li>
+                        <li><a class="dropdown-item" href="#" onclick="openRfqModal()"><i class="bi bi-file-earmark-text text-primary"></i> Request for Quotation</a></li>
+                        <li><a class="dropdown-item" href="#" onclick="openFinancialModal()"><i class="bi bi-cash-coin text-success"></i> Financial Statement</a></li>
+                        <li><a class="dropdown-item" href="#" onclick="openProcurementSummaryModal()"><i class="bi bi-clipboard2-check text-dark"></i> Stock Report</a></li>
                     </ul>
                 </div>
                 <button class="btn btn-sm btn-dark shadow-sm" onclick="openInventoryModal()"><i class="bi bi-boxes"></i> Search / Edit DB</button>
@@ -142,15 +165,12 @@
             </table>
         </div>
 
-        <!-- Close List & Export Procurement Summary Action Bar -->
+        <!-- Action Bar below Requirement Table -->
         <div class="d-flex justify-content-between align-items-center mb-3 px-1 flex-wrap gap-2">
             <small class="text-muted" id="listProgressSummary"></small>
             <div class="d-flex align-items-center gap-2">
                 <button class="btn btn-outline-success btn-sm fw-bold shadow-sm" id="btnBillsModal" onclick="openBillsModal()">
                     <i class="bi bi-receipt"></i> Bills
-                </button>
-                <button class="btn btn-outline-primary btn-sm fw-bold shadow-sm" id="btnExportProcSummary" onclick="openProcurementSummaryModal()">
-                    <i class="bi bi-file-earmark-spreadsheet"></i> Export Procurement Summary
                 </button>
                 <button class="btn btn-outline-danger btn-sm fw-bold shadow-sm" id="btnCloseList" onclick="closeCurrentList()">
                     <i class="bi bi-lock-fill"></i> Close Requirement List
@@ -161,83 +181,182 @@
             </div>
         </div>
 
-        <div class="glass-bottom">
-            <div class="row align-items-center text-center">
-                <div class="col-md-4 border-end border-success">
-                    <h6 class="text-success mb-1">Total Cost (This List)</h6>
-                    <h4 id="totalBudget" class="text-body fw-bold mb-0">₹0.00</h4>
+        <!-- Non-Item Bills / Additional Expenses Section -->
+        <div class="non-item-card p-3 mb-4">
+            <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+                <h6 class="fw-bold mb-0 text-secondary"><i class="bi bi-receipt-cutoff"></i> Additional Expenses (Non-Item Bills: GST, Marketplace Fee, Shipping, etc.)</h6>
+                <div class="d-flex gap-2">
+                    <button class="btn btn-outline-primary btn-sm py-0 px-2 fw-semibold" id="btnAddNonItemBill" onclick="addNonItemExpenseRow()"><i class="bi bi-plus-lg"></i> Add Non-Item Bill</button>
+                    <button class="btn btn-warning btn-sm py-0 px-2 fw-bold" id="btnSaveNonItemBills" onclick="saveNonItemExpenses(true)"><i class="bi bi-floppy"></i> Save Expenses</button>
                 </div>
-                <div class="col-md-4 border-end border-success">
-                    <h6 class="text-success mb-1">Budget Assigned (₹)</h6>
-                    <div class="d-flex justify-content-center">
+            </div>
+            <div class="table-responsive" style="max-height: 220px;">
+                <table class="table table-sm table-bordered align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="width:22%;">Expense Description</th>
+                            <th style="width:16%;">Vendor / Payee</th>
+                            <th style="width:14%;">Invoice No.</th>
+                            <th style="width:12%;">Invoice Date</th>
+                            <th style="width:12%;">Invoice Amount (₹)</th>
+                            <th style="width:18%;">Remarks</th>
+                            <th style="width:6%;" class="text-center">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="nonItemExpensesBody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Bottom Cost Breakdown & Budget Bar -->
+        <div class="glass-bottom">
+            <div class="row align-items-center text-center g-2">
+                <div class="col-6 col-md-2 border-end border-success">
+                    <small class="text-success fw-semibold d-block">Item Expenditure</small>
+                    <h6 id="itemCostDisplay" class="text-body fw-bold mb-0">₹0.00</h6>
+                </div>
+                <div class="col-6 col-md-2 border-end border-success">
+                    <small class="text-success fw-semibold d-block">Additional Expenses</small>
+                    <h6 id="nonItemCostDisplay" class="text-body fw-bold mb-0">₹0.00</h6>
+                </div>
+                <div class="col-6 col-md-2 border-end border-success">
+                    <small class="text-success fw-semibold d-block">Total Expenditure</small>
+                    <h5 id="totalBudget" class="text-body fw-bold mb-0">₹0.00</h5>
+                </div>
+                <div class="col-6 col-md-3 border-end border-success">
+                    <small class="text-success fw-semibold d-block">Budget Assigned (₹)</small>
+                    <div class="d-flex justify-content-center align-items-center">
                         <input type="number" class="form-control form-control-sm text-center fw-bold w-50 bg-body" id="budgetInHand" disabled>
-                        <button class="btn btn-sm btn-outline-success ms-2" id="btnUpdateBudget" onclick="updateBudget()" style="display:none;"><i class="bi bi-check-lg"></i></button>
+                        <button class="btn btn-sm btn-outline-success ms-1" id="btnUpdateBudget" onclick="updateBudget()" style="display:none;"><i class="bi bi-check-lg"></i></button>
                     </div>
                 </div>
-                <div class="col-md-4">
-                    <h6 class="text-success mb-1">Balance</h6>
-                    <h4 id="budgetBalance" class="text-body fw-bold mb-0">₹0.00</h4>
+                <div class="col-12 col-md-3">
+                    <small class="text-success fw-semibold d-block">Balance</small>
+                    <h5 id="budgetBalance" class="text-body fw-bold mb-0">₹0.00</h5>
                 </div>
             </div>
         </div>
     </div>
 </div>
 
-<!-- Procurement Summary & Additional Expenses Modal -->
-<div class="modal fade" id="procSummaryModal" tabindex="-1">
+<!-- 1. REQUEST FOR QUOTATION (RFQ) EXPORT MODAL -->
+<div class="modal fade" id="rfqModal" tabindex="-1">
   <div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content">
       <div class="modal-header bg-primary text-white">
-          <h5 class="modal-title"><i class="bi bi-file-earmark-spreadsheet"></i> Export Procurement Summary</h5>
+          <h5 class="modal-title"><i class="bi bi-file-earmark-text"></i> Export — Request for Quotation (RFQ)</h5>
           <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
-          <div class="row g-2 mb-3 p-2 rounded bg-light border small">
-              <div class="col-md-6"><strong>List:</strong> <span id="sumListName"></span></div>
-              <div class="col-md-6"><strong>Prepared By:</strong> <span id="sumPreparedBy"></span></div>
-              <div class="col-md-6"><strong>Sub Total (Items):</strong> <span id="sumSubTotal" class="fw-bold text-success">₹0.00</span></div>
-              <div class="col-md-6"><strong>Grand Total:</strong> <span id="sumGrandTotalPreview" class="fw-bold text-primary">₹0.00</span></div>
-          </div>
+          <label class="form-label fw-bold small mb-1">Select Lists to Include (Click to toggle)</label>
+          <div id="rfqListPills" class="list-pill-wrap mb-3 p-2 border rounded bg-light"></div>
 
-          <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-1">
-              <label class="form-label fw-bold mb-0">Additional Expense Details (Saved to Google Sheet)</label>
-              <div class="d-flex gap-1 flex-wrap">
-                  <button type="button" class="btn btn-outline-secondary btn-sm py-0" onclick="addExpenseRow('Transportation charges')">+ Transportation</button>
-                  <button type="button" class="btn btn-outline-secondary btn-sm py-0" onclick="addExpenseRow('Processing charges')">+ Processing</button>
-                  <button type="button" class="btn btn-outline-secondary btn-sm py-0" onclick="addExpenseRow('Marketplace fee')">+ Marketplace Fee</button>
-                  <button type="button" class="btn btn-outline-primary btn-sm py-0" onclick="addExpenseRow('')"><i class="bi bi-plus"></i> Custom</button>
-              </div>
-          </div>
-
-          <div id="additionalExpensesList" class="mb-3"></div>
-
-          <div class="row g-2 small border-top pt-2">
+          <div class="row g-2 mb-3">
               <div class="col-md-6">
-                  <label class="form-label small fw-bold mb-1">Date of List Creation</label>
-                  <input type="text" id="sumListCreatedDate" class="form-control form-control-sm" placeholder="dd/MM/yyyy HH:mm:ss">
+                  <label class="form-label fw-bold small mb-1">Target Vendor</label>
+                  <select id="rfqVendorSelect" class="form-select form-select-sm"></select>
               </div>
               <div class="col-md-6">
-                  <label class="form-label small fw-bold mb-1">Last Date of Procurement</label>
-                  <input type="text" id="sumLastProcDate" class="form-control form-control-sm" placeholder="dd/MM/yyyy HH:mm:ss">
+                  <label class="form-label fw-bold small mb-1">Export Format</label>
+                  <select id="rfqFormatSelect" class="form-select form-select-sm">
+                      <option value="pdf">PDF Document</option>
+                      <option value="excel">Excel File (.xlsx)</option>
+                      <option value="print">Printable View</option>
+                  </select>
               </div>
+          </div>
+          <div class="form-check form-switch">
+              <input class="form-check-input" type="checkbox" id="rfqIncludeRefs" checked>
+              <label class="form-check-label small fw-semibold" for="rfqIncludeRefs">Include Reference Links below Item Specs</label>
           </div>
       </div>
-      <div class="modal-footer justify-content-between">
-          <button type="button" class="btn btn-warning btn-sm fw-bold" id="btnSaveExpenses" onclick="saveProcurementExpenses(true)">
-              <i class="bi bi-floppy"></i> Save Expenses
-          </button>
-          <div class="d-flex gap-2">
-              <button type="button" class="btn btn-outline-dark btn-sm fw-bold" onclick="printProcurementSummary()">
-                  <i class="bi bi-printer"></i> Print Report
-              </button>
-              <button type="button" class="btn btn-success btn-sm fw-bold px-3" onclick="downloadProcurementSummaryPdf()">
-                  <i class="bi bi-file-earmark-pdf"></i> Export PDF
-              </button>
-          </div>
+      <div class="modal-footer">
+          <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+          <button class="btn btn-primary btn-sm fw-bold px-4" id="btnRunRfqExport" onclick="executeRfqExport()"><i class="bi bi-download"></i> Generate RFQ</button>
       </div>
   </div></div>
 </div>
 
-<!-- Alerts Modal (Unacquired Carry-Forward + Low Stock Items) -->
+<!-- 2. FINANCIAL STATEMENT EXPORT MODAL -->
+<div class="modal fade" id="financialModal" tabindex="-1">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content">
+      <div class="modal-header bg-success text-white">
+          <h5 class="modal-title"><i class="bi bi-cash-coin"></i> Export — Financial Statement</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+          <label class="form-label fw-bold small mb-1">Select Lists to Include (Click to toggle)</label>
+          <div id="finListPills" class="list-pill-wrap mb-3 p-2 border rounded bg-light"></div>
+
+          <div class="row g-2 mb-3">
+              <div class="col-md-6">
+                  <label class="form-label fw-bold small mb-1">Statement Type</label>
+                  <select id="finReportType" class="form-select form-select-sm" onchange="updateFinancialFormatOptions()">
+                      <option value="expenditure">Expenditure Report (Itemized)</option>
+                      <option value="summary">Summary Report (Invoice Summary — PDF Only)</option>
+                  </select>
+              </div>
+              <div class="col-md-6">
+                  <label class="form-label fw-bold small mb-1">Export Format</label>
+                  <select id="finFormatSelect" class="form-select form-select-sm">
+                      <option value="pdf">PDF Document</option>
+                      <option value="excel">Excel File (.xlsx)</option>
+                      <option value="print">Printable View</option>
+                  </select>
+              </div>
+          </div>
+
+          <div class="mb-2">
+              <label class="form-label fw-bold small mb-1">To Address (Recipient)</label>
+              <textarea id="finToAddress" class="form-control form-control-sm" rows="3" placeholder="e.g., The Head of Department / Accounts Section, IIT Madras..."></textarea>
+          </div>
+          <small class="text-muted"><i class="bi bi-info-circle"></i> Includes all items with a Bill Number and Bill Amount, grouped by Vendor and sorted by Bill Date &amp; Number.</small>
+      </div>
+      <div class="modal-footer">
+          <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+          <button class="btn btn-success btn-sm fw-bold px-4" id="btnRunFinExport" onclick="executeFinancialExport()"><i class="bi bi-file-earmark-pdf"></i> Generate Statement</button>
+      </div>
+  </div></div>
+</div>
+
+<!-- 3. STOCK REPORT (PROCUREMENT SUMMARY) MODAL -->
+<div class="modal fade" id="procSummaryModal" tabindex="-1">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content">
+      <div class="modal-header bg-dark text-white">
+          <h5 class="modal-title"><i class="bi bi-clipboard2-check"></i> Export — Stock Report (Procurement Summary)</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+          <label class="form-label fw-bold small mb-1">Select Lists to Include (Click to toggle)</label>
+          <div id="stockRepListPills" class="list-pill-wrap mb-3 p-2 border rounded bg-light"></div>
+
+          <div class="row g-2 mb-3 p-2 rounded bg-light border small">
+              <div class="col-md-6"><strong>Prepared By:</strong> <span id="sumPreparedBy"></span></div>
+              <div class="col-md-6"><strong>Active List:</strong> <span id="sumListName"></span></div>
+          </div>
+
+          <div class="row g-2 small">
+              <div class="col-md-6">
+                  <label class="form-label small fw-bold mb-1">Date of List Creation</label>
+                  <input type="text" id="sumListCreatedDate" class="form-control form-control-sm" placeholder="dd/MM/yyyy">
+              </div>
+              <div class="col-md-6">
+                  <label class="form-label small fw-bold mb-1">Last Date of Procurement</label>
+                  <input type="text" id="sumLastProcDate" class="form-control form-control-sm" placeholder="dd/MM/yyyy">
+              </div>
+          </div>
+      </div>
+      <div class="modal-footer justify-content-end gap-2">
+          <button type="button" class="btn btn-outline-dark btn-sm fw-bold" onclick="printProcurementSummary()">
+              <i class="bi bi-printer"></i> Print Report
+          </button>
+          <button type="button" class="btn btn-success btn-sm fw-bold px-3" onclick="downloadProcurementSummaryPdf()">
+              <i class="bi bi-file-earmark-pdf"></i> Export PDF
+          </button>
+      </div>
+  </div></div>
+</div>
+
+<!-- Alerts Modal -->
 <div class="modal fade" id="alertsModal" tabindex="-1">
   <div class="modal-dialog modal-xl modal-dialog-scrollable"><div class="modal-content">
       <div class="modal-header bg-danger text-white">
@@ -277,19 +396,35 @@
   </div></div>
 </div>
 
-<!-- List Setup Modal -->
+<!-- List Setup & Faculty Address Settings Modal -->
 <div class="modal fade" id="listModal" tabindex="-1">
-  <div class="modal-dialog"><div class="modal-content">
-      <div class="modal-header"><h5 class="modal-title"><i class="bi bi-gear"></i> List Setup</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title"><i class="bi bi-gear"></i> List Setup &amp; Faculty Address</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
       <div class="modal-body">
+        <div id="facultyAlertBanner" class="alert alert-warning py-2 small fw-semibold" style="display:none;">
+            <i class="bi bi-exclamation-triangle-fill"></i> Please enter the Faculty Address below before generating a Request for Quotation.
+        </div>
         <label class="fw-bold mb-1">Rename List</label>
-        <div class="d-flex gap-2 mb-3"><input type="text" id="listRename" class="form-control"><button class="btn btn-primary" onclick="renameList()">Rename</button></div><hr>
+        <div class="d-flex gap-2 mb-3"><input type="text" id="listRename" class="form-control form-control-sm"><button class="btn btn-primary btn-sm" onclick="renameList()">Rename</button></div>
+        <hr>
+        <label class="fw-bold mb-2"><i class="bi bi-person-vcard"></i> Faculty Address (Inherited by Future Lists)</label>
+        <div class="row g-2 mb-3">
+            <div class="col-md-6"><label class="form-label small mb-0">Full Name</label><input type="text" id="facFullName" class="form-control form-control-sm" placeholder="Dr. Nimmi Das Anthuparambil"></div>
+            <div class="col-md-6"><label class="form-label small mb-0">Designation / Position</label><input type="text" id="facDesignation" class="form-control form-control-sm" placeholder="Assistant Professor"></div>
+            <div class="col-md-6"><label class="form-label small mb-0">Department</label><input type="text" id="facDepartment" class="form-control form-control-sm" placeholder="Department of Physics, IIT Madras"></div>
+            <div class="col-md-3"><label class="form-label small mb-0">Office Building</label><input type="text" id="facBuilding" class="form-control form-control-sm" placeholder="HSB"></div>
+            <div class="col-md-3"><label class="form-label small mb-0">Room Number</label><input type="text" id="facRoom" class="form-control form-control-sm" placeholder="HSB 218A"></div>
+            <div class="col-md-6"><label class="form-label small mb-0">Email Address</label><input type="email" id="facEmail" class="form-control form-control-sm" placeholder="nimmi@physics.iitm.ac.in"></div>
+            <div class="col-md-6"><label class="form-label small mb-0">Mobile Number</label><input type="text" id="facPhone" class="form-control form-control-sm" placeholder="+91 9496443324"></div>
+        </div>
+        <hr>
         <label class="fw-bold mb-1"><i class="bi bi-people"></i> Collaborators</label>
-        <input type="text" id="listCollabs" class="form-control mb-3" placeholder="Comma-separated usernames">
-        <label class="fw-bold mb-1"><i class="bi bi-building"></i> Quote / Delivery Address</label>
-        <textarea id="listQuoteAddress" class="form-control mb-3" rows="3" placeholder="Enter institute address for quotes..."></textarea>
-        <button class="btn btn-success w-100 mb-3 fw-bold" onclick="saveListSettings()">Save List Settings</button><hr>
-        <button class="btn btn-outline-danger w-100" onclick="deleteList()"><i class="bi bi-trash"></i> Delete This List Completely</button>
+        <input type="text" id="listCollabs" class="form-control form-control-sm mb-3" placeholder="Comma-separated usernames">
+        <label class="fw-bold mb-1"><i class="bi bi-building"></i> Additional Quote / Delivery Notes</label>
+        <textarea id="listQuoteAddress" class="form-control form-control-sm mb-3" rows="2" placeholder="Optional delivery notes..."></textarea>
+        <button class="btn btn-success w-100 mb-3 fw-bold" onclick="saveListSettings()">Save List Settings &amp; Faculty Address</button>
+        <hr>
+        <button class="btn btn-outline-danger btn-sm w-100" onclick="deleteList()"><i class="bi bi-trash"></i> Delete This List Completely</button>
       </div>
   </div></div>
 </div>
@@ -356,34 +491,7 @@
   </div></div>
 </div>
 
-<!-- Export Settings Modal -->
-<div class="modal fade" id="exportModal" tabindex="-1">
-  <div class="modal-dialog"><div class="modal-content">
-      <div class="modal-header">
-          <h6 class="modal-title fw-bold"><i class="bi bi-box-arrow-right"></i> Export Settings</h6>
-          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-      </div>
-      <div class="modal-body">
-          <label class="form-label fw-bold">Export Type / Target Vendor</label>
-          <select id="exportVendorSelect" class="form-select mb-3" onchange="renderExportCheckboxes()"></select>
-          <label class="form-label fw-bold">Select Columns</label>
-          <div id="exportColCheckboxes" class="mb-3" style="max-height: 220px; overflow-y: auto;"></div>
-          <div class="form-check form-switch border-top pt-2 mb-2">
-              <input class="form-check-input" type="checkbox" role="switch" id="exportIncludeRefs" checked>
-              <label class="form-check-label small fw-bold text-secondary" for="exportIncludeRefs">Include Reference Links (below Item Specs)</label>
-          </div>
-          <div class="form-check form-switch border-top pt-2">
-              <input class="form-check-input" type="checkbox" role="switch" id="exportIncludeBudget">
-              <label class="form-check-label small fw-bold text-secondary" for="exportIncludeBudget">Include Internal Budget Summary (Allocated / Used / Remaining)</label>
-          </div>
-      </div>
-      <div class="modal-footer p-2">
-          <button class="btn btn-success btn-sm w-100 fw-bold" onclick="executeExport()">Confirm Export</button>
-      </div>
-  </div></div>
-</div>
-
-    <!-- Upload / View Bills Modal -->
+<!-- Upload / View Bills Modal -->
 <div class="modal fade" id="billsModal" tabindex="-1">
   <div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content">
       <div class="modal-header bg-success text-white">
