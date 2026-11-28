@@ -390,11 +390,11 @@ function computeRowPQBD(row) {
     if (manual !== 'P' && manual !== 'Q') manual = 'P';
 
     return {
-        P: !isBilled && manual === 'P',
-        Q: !isBilled && manual === 'Q',
+        P: !isBilled && !isDelivered && manual === 'P',
+        Q: !isBilled && !isDelivered && manual === 'Q',
         B: isBilled,
         D: isDelivered,
-        pqDisabled: isBilled
+        pqDisabled: isBilled || isDelivered
     };
 }
 
@@ -758,7 +758,7 @@ function renderTable() {
             const subUnitVal = pieceFlag ? '' : (row['Sub Unit'] || 'Piece');
 
             if (!row._isEditing) {
-                const isLocked = (g.key === 'acquired');
+                const isLocked = (g.key === 'acquired') || computeRowPQBD(row).D;
                 let selVendor = row['Selected Vendor'] || '';
                 let acqBadgeClass = acqQty >= reqQty && reqQty > 0 ? 'text-success fw-bold' : (acqQty > 0 ? 'text-warning fw-bold' : 'text-muted');
 
@@ -783,7 +783,7 @@ function renderTable() {
                 }).join('');
 
                 const actionCellHtml = isLocked
-                    ? `<span class="badge bg-success-subtle text-success border border-success-subtle" title="Completely Acquired (Locked)"><i class="bi bi-lock-fill"></i> Acquired</span>`
+                    ? `<span class="badge bg-success-subtle text-success border border-success-subtle" title="Completely Acquired / Delivered (Locked)"><i class="bi bi-lock-fill"></i> Acquired</span>`
                     : `<button class="btn btn-sm btn-outline-primary py-0 px-1" onclick="editRow(${i})" title="Edit" ${closed ? 'disabled' : ''}><i class="bi bi-pencil-square"></i></button>
                        <button class="btn btn-sm btn-outline-secondary py-0 px-1 ms-1" onclick="duplicateRow(${i})" title="Duplicate Row" ${closed ? 'disabled' : ''}><i class="bi bi-copy"></i></button>
                        <button class="btn btn-sm btn-outline-danger py-0 px-1 ms-1" onclick="deleteRow(${i})" title="Delete" ${closed ? 'disabled' : ''}><i class="bi bi-trash"></i></button>`;
@@ -808,9 +808,17 @@ function renderTable() {
                     ? `<td class="text-center">${row['Estimated Price'] !== '' && row['Estimated Price'] !== undefined ? '₹' + esc(row['Estimated Price']) : '-'}</td>`
                     : `<td><input type="number" step="0.01" class="form-control form-control-sm number-box" value="${esc(row['Estimated Price'])}" onchange="updateLiveRow(${i}, 'Estimated Price', this.value)" ${closed ? 'disabled' : ''}></td>`;
 
-                const billRefCell = `<td><input type="text" class="form-control form-control-sm bill-box" placeholder="Bill #" value="${esc(row['Bill Ref No'] || '')}" onchange="updateLiveBillField(${i}, 'Bill Ref No', this.value)" ${closed ? 'disabled' : ''}></td>`;
-                const billDateCell = `<td><input type="date" class="form-control form-control-sm bill-box" value="${esc(toIsoDate(row['Bill Date']))}" onchange="updateLiveBillField(${i}, 'Bill Date', formatDateOnly(this.value))" ${closed ? 'disabled' : ''}></td>`;
-                const billAmtCell = `<td><input type="number" step="0.01" class="form-control form-control-sm number-box" placeholder="₹" value="${esc(row['Bill Amount'] ?? '')}" onchange="updateLiveBillField(${i}, 'Bill Amount', this.value)" ${closed ? 'disabled' : ''}></td>`;
+                const billRefCell = isLocked
+                    ? `<td class="small text-nowrap">${esc(row['Bill Ref No'] || '-')}</td>`
+                    : `<td><input type="text" class="form-control form-control-sm bill-box" placeholder="Bill #" value="${esc(row['Bill Ref No'] || '')}" onchange="updateLiveBillField(${i}, 'Bill Ref No', this.value)" ${closed ? 'disabled' : ''}></td>`;
+
+                const billDateCell = isLocked
+                    ? `<td class="small text-nowrap text-center">${esc(formatDateOnly(row['Bill Date']) || '-')}</td>`
+                    : `<td><input type="date" class="form-control form-control-sm bill-box" value="${esc(toIsoDate(row['Bill Date']))}" onchange="updateLiveBillField(${i}, 'Bill Date', formatDateOnly(this.value))" ${closed ? 'disabled' : ''}></td>`;
+
+                const billAmtCell = isLocked
+                    ? `<td class="small text-nowrap text-end">${row['Bill Amount'] !== '' && row['Bill Amount'] !== undefined ? '₹' + parseFloat(row['Bill Amount']).toFixed(2) : '-'}</td>`
+                    : `<td><input type="number" step="0.01" class="form-control form-control-sm number-box" placeholder="₹" value="${esc(row['Bill Amount'] ?? '')}" onchange="updateLiveBillField(${i}, 'Bill Amount', this.value)" ${closed ? 'disabled' : ''}></td>`;
 
                 rowsHTML += `<tr data-group="${g.key}">
                     <td class="sticky-col-0">${displayIdx + 1}</td>
@@ -1083,7 +1091,7 @@ function toggleVendorNA(i, v) {
 
 function optimizeVendors() {
     currentListData.forEach(row => {
-        if (row._isEditing || getRowGroupKey(row) === 'acquired') return;
+        if (row._isEditing || getRowGroupKey(row) === 'acquired' || computeRowPQBD(row).D) return;
         let bestVendor = '';
         let minPrice = Infinity;
         activeVendors.forEach(v => {
@@ -1636,7 +1644,6 @@ function generateSummaryReportPdf(vendorNames, vendorMap, addlExpensesAll, facLi
 
     vendorNames.forEach(v => {
         body.push([{ content: `Vendor: ${v}`, colSpan: 4, styles: { fontStyle: 'bold', fillColor: [233, 236, 239] } }]);
-        // Group by unique Bill Number + Bill Date for invoice summary
         const invMap = {};
         vendorMap[v].forEach(it => {
             const k = `${it.billNo}||${it.billDate}`;
