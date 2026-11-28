@@ -1025,7 +1025,9 @@ function selectVendor(i, v) {
 function calcTotal() {
     let itemTotal = 0;
     currentListData.forEach(r => {
-        if (!r._isEditing) itemTotal += getRowEffectiveAmount(r);
+        if (!r._isEditing && hasCompleteBill(r)) {
+            itemTotal += parseFloat(r['Bill Amount']) || 0;
+        }
     });
     let nonItemTotal = nonItemExpenses.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0);
     let grandTotal = itemTotal + nonItemTotal;
