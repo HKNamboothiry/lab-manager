@@ -1,4 +1,4 @@
-const API_URL = "https://script.google.com/macros/s/AKfycbxkDBmVRgyuB8yKgLxx_-qAuQNI9z2xOEd-pzGt4QzNhXJ1aOc0WfDtENvxkYguRK9l/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbwD_GLzrBzNz9ZAaJNXQ5O0__m6Tlyp-q3-EaU1pc-1R_Y__56FZVzBBnYYyXsFSFra/exec";
 
 let USER = null;
 let stockItems = [];
@@ -11,7 +11,6 @@ let expandedStockIds = new Set();
 
 const DEFAULT_SUB_UNITS = ["Piece", "mL", "L", "g", "kg", "Pair", "Roll"];
 
-// Proxy authentication cache: { username: expiryTimestampMs } (2 minutes validity)
 const proxyAuthCache = {};
 const PROXY_AUTH_DURATION_MS = 2 * 60 * 1000;
 let pendingDeductionPayload = null;
@@ -58,18 +57,12 @@ function nowFormattedDDMMYYYYHHMM() {
 
 function formatStockDisplay(totalBase, unit, subPerUnit, subLabel) {
     const hasSubUnit = !isPieceUnit(unit) && subPerUnit > 1;
-    if (!hasSubUnit) {
-        return `${totalBase} ${unit}`;
-    }
+    if (!hasSubUnit) return `${totalBase} ${unit}`;
     const subLbl = (subLabel && subLabel.trim()) ? subLabel.trim() : "Sub Unit";
     const fullPacks = Math.floor(totalBase / subPerUnit);
     const remSub = Number((totalBase % subPerUnit).toFixed(2));
-    if (remSub === 0) {
-        return `${fullPacks} ${unit} (${subPerUnit} ${subLbl})`;
-    }
-    if (fullPacks === 0) {
-        return `${remSub} ${subLbl}`;
-    }
+    if (remSub === 0) return `${fullPacks} ${unit} (${subPerUnit} ${subLbl})`;
+    if (fullPacks === 0) return `${remSub} ${subLbl}`;
     return `${fullPacks} ${unit} + ${remSub} ${subLbl} (${totalBase} ${subLbl})`;
 }
 
@@ -391,6 +384,16 @@ async function loadReqListForProcurement() {
             const reqSubQty = pieceFlag ? '' : String(r['Sub Quantity'] || '');
             const reqSubUnit = pieceFlag ? '' : String(r['Sub Unit'] || (existingStock && existingStock.subLabel) || 'Piece');
 
+            // Prefill Bill Date -> ISO format if available
+            const billDateRaw = String(r['Bill Date'] || '').trim();
+            let isoProcDate = todayStr;
+            if (/^\d{2}\/\d{2}\/\d{4}/.test(billDateRaw)) {
+                const p = billDateRaw.slice(0, 10).split('/');
+                isoProcDate = `${p[2]}-${p[1]}-${p[0]}`;
+            } else if (/^\d{4}-\d{2}-\d{2}/.test(billDateRaw)) {
+                isoProcDate = billDateRaw.slice(0, 10);
+            }
+
             return {
                 selected: remQty > 0,
                 reqRowIndex: idx,
@@ -407,9 +410,9 @@ async function loadReqListForProcurement() {
                 purchasedSubQty: reqSubQty,
                 purchasedSubUnit: pieceFlag ? '' : (reqSubUnit || (existingStock && existingStock.subLabel) || 'Piece'),
                 vendor: String(r['Selected Vendor'] || ''),
-                amount: r['Total Estimate'] || '',
-                refNo: '',
-                procDate: todayStr,
+                amount: r['Bill Amount'] || r['Total Estimate'] || '',
+                refNo: String(r['Bill Ref No'] || '').trim(),
+                procDate: isoProcDate,
                 location: existingStock ? existingStock.location : '',
                 threshold: existingStock && existingStock.threshold > 0 ? existingStock.threshold : '',
                 thresholdType: existingStock ? existingStock.thresholdType : (pieceFlag ? 'qty' : 'sub')
@@ -425,9 +428,7 @@ async function loadReqListForProcurement() {
 function handleProcSubUnitChange(idx, sel) {
     if (sel.value === "_NEW_") {
         const u = prompt("Enter new sub-unit type (e.g. Piece, mL, g, Pair):");
-        if (u && u.trim()) {
-            procRows[idx].purchasedSubUnit = u.trim();
-        }
+        if (u && u.trim()) procRows[idx].purchasedSubUnit = u.trim();
         renderProcModalRows();
     } else {
         procRows[idx].purchasedSubUnit = sel.value;
@@ -542,11 +543,9 @@ function renderProcModalRows() {
     });
 
     if (!html) {
-        if (keywords.length > 0) {
-            html = `<tr><td colspan="16" class="text-center text-muted p-3">No requirement items matched "${esc(rawSearch)}".</td></tr>`;
-        } else {
-            html = `<tr><td colspan="16" class="text-center text-success fw-semibold p-3">All items in this requirement list are completely acquired. Click "Show Acquired" above to view them.</td></tr>`;
-        }
+        html = keywords.length > 0
+            ? `<tr><td colspan="16" class="text-center text-muted p-3">No requirement items matched "${esc(rawSearch)}".</td></tr>`
+            : `<tr><td colspan="16" class="text-center text-success fw-semibold p-3">All items in this requirement list are completely acquired. Click "Show Acquired" above to view them.</td></tr>`;
     }
 
     tbody.innerHTML = html;
@@ -661,10 +660,7 @@ function openDeductModal(stockId) {
 function updateProxyAuthStatus() {
     const target = document.getElementById('dedTargetUser').value;
     const badge = document.getElementById('proxyAuthBadge');
-    if (target === USER.username) {
-        badge.style.display = 'none';
-        return;
-    }
+    if (target === USER.username) { badge.style.display = 'none'; return; }
     badge.style.display = 'block';
     const expiry = proxyAuthCache[target];
     if (expiry && Date.now() < expiry) {
