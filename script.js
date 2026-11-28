@@ -848,9 +848,15 @@ function renderTable() {
                     ? `<td class="text-center">${row['Estimated Price'] !== '' && row['Estimated Price'] !== undefined ? '₹' + esc(row['Estimated Price']) : '-'}</td>`
                     : `<td><input type="number" step="0.01" class="form-control form-control-sm number-box" value="${esc(row['Estimated Price'])}" onchange="updateLiveRow(${i}, 'Estimated Price', this.value)" ${closed ? 'disabled' : ''}></td>`;
 
+                const billRefVal = String(row['Bill Ref No'] || '').trim();
+                const safeBillRef = billRefVal.replace(/'/g, "\\'");
+                const viewBillBtn = billRefVal
+                    ? `<button type="button" class="btn btn-sm btn-outline-primary py-0 px-1" onclick="viewRowBill('${safeBillRef}')" title="View Bill (${esc(billRefVal)})"><i class="bi bi-eye"></i></button>`
+                    : '';
+
                 const billRefCell = isLocked
-                    ? `<td class="small text-nowrap">${esc(row['Bill Ref No'] || '-')}</td>`
-                    : `<td><input type="text" class="form-control form-control-sm bill-box" placeholder="Bill #" value="${esc(row['Bill Ref No'] || '')}" onchange="updateLiveBillField(${i}, 'Bill Ref No', this.value)" ${closed ? 'disabled' : ''}></td>`;
+                    ? `<td class="small text-nowrap"><div class="d-flex align-items-center justify-content-between gap-1"><span>${esc(billRefVal || '-')}</span>${viewBillBtn}</div></td>`
+                    : `<td><div class="d-flex align-items-center gap-1"><input type="text" class="form-control form-control-sm bill-box" placeholder="Bill #" value="${esc(billRefVal)}" onchange="updateLiveBillField(${i}, 'Bill Ref No', this.value)" ${closed ? 'disabled' : ''}>${viewBillBtn}</div></td>`;
 
                 const billDateCell = isLocked
                     ? `<td class="small text-nowrap text-center">${esc(formatDateOnly(row['Bill Date']) || '-')}</td>`
@@ -2376,7 +2382,7 @@ async function downloadProcurementSummaryPdf() {
 }
 
 // -------------------------------------------------------------
-// BILLS UPLOAD & VIEW (Google Drive)
+// BILLS UPLOAD, RENAME & VIEW (Google Drive)
 // -------------------------------------------------------------
 async function openBillsModal() {
     const listName = document.getElementById('listSelector').value;
@@ -2403,12 +2409,27 @@ async function loadListBills(listName) {
                 container.innerHTML = `<div class="p-3 text-center text-muted small fst-italic">No bills uploaded for this list yet.</div>`;
                 return;
             }
-            container.innerHTML = files.map(f => `
-                <a href="${esc(f.url)}" target="_blank" rel="noopener noreferrer" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center py-2">
-                    <div><i class="bi bi-file-earmark-text text-success me-2"></i><span class="fw-semibold">${esc(f.name)}</span></div>
-                    <small class="text-muted">${esc(f.date)}</small>
-                </a>
-            `).join('');
+            container.innerHTML = files.map(f => {
+                const safeId = String(f.id).replace(/'/g, "\\'");
+                const safeName = String(f.name).replace(/'/g, "\\'");
+                const previewUrl = `https://drive.google.com/file/d/${f.id}/preview`;
+                return `
+                <div class="list-group-item d-flex justify-content-between align-items-center py-2 gap-2">
+                    <div class="text-truncate">
+                        <i class="bi bi-file-earmark-text text-success me-2"></i>
+                        <a href="${esc(f.url)}" target="_blank" rel="noopener noreferrer" class="fw-semibold text-decoration-none">${esc(f.name)}</a>
+                        <small class="text-muted ms-2">${esc(f.date)}</small>
+                    </div>
+                    <div class="d-flex align-items-center gap-1 flex-shrink-0">
+                        <button type="button" class="btn btn-sm btn-outline-primary py-0 px-2" onclick="openBillViewerModal('${esc(f.name)}', '${esc(previewUrl)}', '${esc(f.url)}')" title="Preview Bill">
+                            <i class="bi bi-eye"></i>
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2" onclick="renameBillFile('${safeId}', '${safeName}')" title="Rename Bill">
+                            <i class="bi bi-pencil"></i> Rename
+                        </button>
+                    </div>
+                </div>`;
+            }).join('');
         } else {
             container.innerHTML = `<div class="p-3 text-center text-danger small">${esc(res.message || 'Failed to load bills.')}</div>`;
         }
@@ -2420,13 +2441,19 @@ async function loadListBills(listName) {
 function uploadBillFile() {
     const listName = document.getElementById('listSelector').value;
     const fileInput = document.getElementById('billFileInput');
-    const prefix = (document.getElementById('billRefPrefix').value || "").trim().replace(/[\\/:*?"<>|]/g, '_');
+    const invoiceId = (document.getElementById('billRefPrefix').value || "").trim().replace(/[\\/:*?"<>|]/g, '_');
+
     if (!listName) return alert("Select a list first.");
+    if (!invoiceId) return alert("Please enter the Invoice ID to use as the file name.");
     if (!fileInput.files || fileInput.files.length === 0) return alert("Please choose a bill file to upload.");
+
     const file = fileInput.files[0];
     if (file.size > 15 * 1024 * 1024) return alert("File is too large. Keep bill files under 15 MB.");
 
-    const finalName = prefix ? `${prefix}_${file.name}` : file.name;
+    const extMatch = file.name.match(/(\.[^.]+)$/);
+    const ext = extMatch ? extMatch[1] : "";
+    const finalName = `${invoiceId}${ext}`;
+
     const btn = document.getElementById('btnUploadBill');
     btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Uploading...';
     btn.disabled = true;
@@ -2452,6 +2479,63 @@ function uploadBillFile() {
         }
     };
     reader.readAsDataURL(file);
+}
+
+async function renameBillFile(fileId, currentName) {
+    const currentBase = currentName.replace(/\.[^.]+$/, "");
+    const newBase = prompt("Enter new Invoice ID / file name:", currentBase);
+    if (!newBase || !newBase.trim() || newBase.trim() === currentBase) return;
+
+    const listName = document.getElementById('listSelector').value;
+    try {
+        const res = await apiPost({
+            action: "renameBill",
+            fileId: fileId,
+            newName: newBase.trim()
+        });
+        if (res.status === "success") {
+            await loadListBills(listName);
+        } else {
+            alert(res.message || "Failed to rename bill.");
+        }
+    } catch (e) {
+        alert("Connection error while renaming bill.");
+    }
+}
+
+async function viewRowBill(invoiceId) {
+    const listName = document.getElementById('listSelector').value;
+    if (!listName || !invoiceId) return;
+
+    try {
+        const res = await apiPost({
+            action: "getBillByInvoiceId",
+            listName: listName,
+            invoiceId: invoiceId
+        });
+        if (res.status === "success" && res.file) {
+            openBillViewerModal(res.file.name, res.file.previewUrl, res.file.url);
+        } else if (res.status === "not_found") {
+            alert("Bill is not found!");
+        } else {
+            alert(res.message || "Could not load bill.");
+        }
+    } catch (e) {
+        alert("Connection error while fetching bill.");
+    }
+}
+
+function openBillViewerModal(title, previewUrl, externalUrl) {
+    document.getElementById('billViewerTitle').innerText = title || "View Bill";
+    document.getElementById('billViewerFrame').src = previewUrl;
+    document.getElementById('billViewerExternalLink').href = externalUrl || previewUrl;
+
+    const modalEl = document.getElementById('billViewerModal');
+    modalEl.addEventListener('hidden.bs.modal', function onHide() {
+        document.getElementById('billViewerFrame').src = "";
+        modalEl.removeEventListener('hidden.bs.modal', onHide);
+    });
+    bootstrap.Modal.getOrCreateInstance(modalEl).show();
 }
 
 // -------------------------------------------------------------
