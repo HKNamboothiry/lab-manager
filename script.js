@@ -1672,6 +1672,15 @@ async function executeFinancialExport() {
 
                 const vendor = String(r['Selected Vendor'] || 'Unspecified Vendor').trim() || 'Unspecified Vendor';
                 const billDate = formatDateOnly(r['Bill Date'] || r['Date of Procurement']);
+                const qty = parseFloat(r['Acquired Qty']) || parseFloat(r['Required Quantity']) || 1;
+                const unit = String(r['Unit'] || 'Piece').trim();
+                const pieceFlag = isPieceUnit(unit);
+                const subQty = pieceFlag ? 0 : (parseFloat(r['Acquired Sub Qty']) || parseFloat(r['Sub Quantity']) || 0);
+                const subUnit = pieceFlag ? '' : String(r['Acquired Sub Unit'] || r['Sub Unit'] || 'Piece').trim();
+                const hasSub = !pieceFlag && subQty > 0;
+                const totalPieces = hasSub ? Number((qty * subQty).toFixed(2)) : qty;
+                const costPerPiece = totalPieces > 0 ? (billAmt / totalPieces) : billAmt;
+
                 if (!vendorMap[vendor]) vendorMap[vendor] = [];
                 vendorMap[vendor].push({
                     item: String(r['Item'] || '').trim(),
@@ -1679,7 +1688,8 @@ async function executeFinancialExport() {
                     refLink: String(r['Reference Link'] || '').trim(),
                     prefComp: String(r['Preferred Company'] || '').trim(),
                     code: String(r['Product Code'] || '').trim(),
-                    billNo, billDate, amount: billAmt
+                    billNo, billDate, amount: billAmt,
+                    qty, unit, hasSub, subQty, subUnit, totalPieces, costPerPiece
                 });
             });
 
@@ -1837,18 +1847,46 @@ function generateSummaryReportPdf(vendorNames, vendorMap, addlExpensesAll, facLi
     doc.save(`Financial_Summary_Report_${genDate.replace(/\//g, '-')}.pdf`);
 }
 
+function drawRupeeVector(doc, x, y, size = 2.6, isBold = false) {
+    const prevLW = doc.getLineWidth();
+    doc.setLineWidth(isBold ? 0.34 : 0.24);
+    doc.setDrawColor(20, 20, 20);
+    // Top bar
+    doc.line(x, y - size, x + size * 0.85, y - size);
+    // Middle bar
+    doc.line(x, y - size * 0.62, x + size * 0.85, y - size * 0.62);
+    // Curve right side + lower diagonal leg
+    doc.line(x + size * 0.42, y - size, x + size * 0.62, y - size * 0.78);
+    doc.line(x + size * 0.62, y - size * 0.78, x + size * 0.56, y - size * 0.45);
+    doc.line(x + size * 0.56, y - size * 0.45, x + size * 0.12, y - size * 0.32);
+    doc.line(x + size * 0.12, y - size * 0.32, x + size * 0.68, y + size * 0.12);
+    doc.setLineWidth(prevLW);
+}
+
+function formatQtyCellPlain(it) {
+    if (!it.hasSub) return `${it.qty} ${it.unit}`;
+    return `${it.qty} ${it.unit}\n${it.subQty} ${it.subUnit}/${it.unit}\nTotal: ${it.totalPieces} ${it.subUnit}`;
+}
+
+function formatQtyCellHtml(it) {
+    if (!it.hasSub) return `<div>${esc(it.qty)} ${esc(it.unit)}</div>`;
+    return `<div><strong>${esc(it.qty)} ${esc(it.unit)}</strong></div>
+        <div class="small text-muted">${esc(it.subQty)} ${esc(it.subUnit)}/${esc(it.unit)}</div>
+        <div class="small fst-italic">Total: ${esc(it.totalPieces)} ${esc(it.subUnit)}</div>`;
+}
+
 function generateExpenditureReport(format, vendorNames, vendorMap, addlExpensesAll, facLines, toAddress, genDate, exporterNote, includedNote, budgetRows) {
     let grandTotal = 0;
 
     if (format === 'excel') {
         const aoa = [
             ["DR. NIMMI DAS LAB"],
-            ["FINANCIAL STATEMENT — EXPENDITURE REPORT", "", "", "", `Date: ${genDate}`],
+            ["FINANCIAL STATEMENT — EXPENDITURE REPORT", "", "", "", "", "", `Date: ${genDate}`],
             ["From:"],
             ...facLines.map(l => [l])
         ];
         if (toAddress) { aoa.push(["To:"]); toAddress.split('\n').forEach(l => aoa.push([l])); }
-        aoa.push([], ["Sl. No.", "Item & Item Specs", "Bill Number", "Bill Date", "Amount (Rs.)"]);
+        aoa.push([], ["Sl. No.", "Item & Item Specs", "Bill Number", "Bill Date", "Cost / Piece (₹)", "Qty & Unit", "Amount (₹)"]);
 
         let sl = 1;
         vendorNames.forEach(v => {
@@ -1857,10 +1895,10 @@ function generateExpenditureReport(format, vendorNames, vendorMap, addlExpensesA
             vendorMap[v].forEach(it => {
                 vTotal += it.amount;
                 const desc = [it.item, it.specs, it.prefComp ? `Preferred company: ${it.prefComp}${it.code ? ` [${it.code}]` : ''}` : '', it.refLink].filter(Boolean).join("\n");
-                aoa.push([sl++, desc, it.billNo, it.billDate || "-", it.amount.toFixed(2)]);
+                aoa.push([sl++, desc, it.billNo, it.billDate || "-", `₹ ${it.costPerPiece.toFixed(2)}`, formatQtyCellPlain(it), `₹ ${it.amount.toFixed(2)}`]);
             });
             grandTotal += vTotal;
-            aoa.push(["", "", "", `Vendor Total (${v})`, vTotal.toFixed(2)]);
+            aoa.push(["", "", "", "", "", `Vendor Total (${v})`, `₹ ${vTotal.toFixed(2)}`]);
         });
 
         if (addlExpensesAll.length > 0) {
@@ -1869,16 +1907,16 @@ function generateExpenditureReport(format, vendorNames, vendorMap, addlExpensesA
             addlExpensesAll.forEach(e => {
                 addlTotal += e.amount;
                 const desc = `${e.label}${e.vendor ? ` (${e.vendor})` : ''}${e.remarks ? ` - ${e.remarks}` : ''}`;
-                aoa.push([sl++, desc, e.invoiceNo, e.invoiceDate || "-", e.amount.toFixed(2)]);
+                aoa.push([sl++, desc, e.invoiceNo, e.invoiceDate || "-", "-", "-", `₹ ${e.amount.toFixed(2)}`]);
             });
             grandTotal += addlTotal;
-            aoa.push(["", "", "", "Additional Expenses Total", addlTotal.toFixed(2)]);
+            aoa.push(["", "", "", "", "", "Additional Expenses Total", `₹ ${addlTotal.toFixed(2)}`]);
         }
-        aoa.push([], ["", "", "", "GRAND TOTAL", grandTotal.toFixed(2)]);
+        aoa.push([], ["", "", "", "", "", "GRAND TOTAL", `₹ ${grandTotal.toFixed(2)}`]);
 
         if (budgetRows && budgetRows.length > 0) {
             aoa.push([], ["BUDGET SPENDING SUMMARY"], ["List Name", "Creation Date", "Assigned Budget", "Spent Amount", "Balance"]);
-            budgetRows.forEach(r => aoa.push([r.name, r.createdDate, r.assigned, r.spent, r.balance]));
+            budgetRows.forEach(r => aoa.push([r.name, r.createdDate, `₹ ${r.assigned}`, `₹ ${r.spent}`, `₹ ${r.balance}`]));
         }
         aoa.push([], [exporterNote], [includedNote]);
 
@@ -1889,7 +1927,7 @@ function generateExpenditureReport(format, vendorNames, vendorMap, addlExpensesA
     }
 
     if (format === 'pdf') {
-        const doc = new jspdf.jsPDF('portrait');
+        const doc = new jspdf.jsPDF('landscape');
         const pageW = doc.internal.pageSize.getWidth();
         doc.setFontSize(15); doc.setFont(undefined, 'bold');
         doc.text("DR. NIMMI DAS LAB", pageW / 2, 14, { align: 'center' });
@@ -1907,16 +1945,16 @@ function generateExpenditureReport(format, vendorNames, vendorMap, addlExpensesA
         doc.text(`Date: ${genDate}`, pageW - 14, yRight, { align: 'right' });
         yRight += 5;
         if (toAddress) {
-            doc.text("To:", pageW / 2 + 10, yRight);
+            doc.text("To:", pageW / 2 + 20, yRight);
             doc.setFont(undefined, 'normal');
             yRight += 4;
-            doc.splitTextToSize(toAddress, pageW / 2 - 24).forEach(l => { doc.text(l, pageW / 2 + 10, yRight); yRight += 4; });
+            doc.splitTextToSize(toAddress, pageW / 2 - 34).forEach(l => { doc.text(l, pageW / 2 + 20, yRight); yRight += 4; });
         }
 
         const body = [];
         let sl = 1;
         vendorNames.forEach(v => {
-            body.push([{ content: `Vendor: ${v}`, colSpan: 5, styles: { fontStyle: 'bold', fillColor: [233, 236, 239] } }]);
+            body.push([{ content: `Vendor: ${v}`, colSpan: 7, styles: { fontStyle: 'bold', fillColor: [233, 236, 239] } }]);
             let vTotal = 0;
             vendorMap[v].forEach(it => {
                 vTotal += it.amount;
@@ -1924,44 +1962,75 @@ function generateExpenditureReport(format, vendorNames, vendorMap, addlExpensesA
                     it.item,
                     it.specs,
                     it.prefComp ? `Preferred company: ${it.prefComp}${it.code ? ` [${it.code}]` : ''}` : '',
-                    it.refLink ? truncateSingleLineText(it.refLink, 48) : ''
+                    it.refLink ? truncateSingleLineText(it.refLink, 55) : ''
                 ].filter(Boolean).join("\n");
-                body.push([sl++, desc, it.billNo, it.billDate || "-", `Rs. ${it.amount.toFixed(2)}`]);
+                body.push([
+                    sl++,
+                    desc,
+                    it.billNo,
+                    it.billDate || "-",
+                    { content: it.costPerPiece.toFixed(2), _rupee: true },
+                    formatQtyCellPlain(it),
+                    { content: it.amount.toFixed(2), _rupee: true }
+                ]);
             });
             grandTotal += vTotal;
             body.push([
-                { content: `Vendor Total (${v})`, colSpan: 4, styles: { halign: 'right', fontStyle: 'bold' } },
-                { content: `Rs. ${vTotal.toFixed(2)}`, styles: { halign: 'right', fontStyle: 'bold' } }
+                { content: `Vendor Total (${v})`, colSpan: 6, styles: { halign: 'right', fontStyle: 'bold' } },
+                { content: vTotal.toFixed(2), _rupee: true, _boldRupee: true, styles: { halign: 'right', fontStyle: 'bold' } }
             ]);
         });
 
         if (addlExpensesAll.length > 0) {
-            body.push([{ content: "Additional Expenses (Non-Item Bills)", colSpan: 5, styles: { fontStyle: 'bold', fillColor: [255, 243, 205] } }]);
+            body.push([{ content: "Additional Expenses (Non-Item Bills)", colSpan: 7, styles: { fontStyle: 'bold', fillColor: [255, 243, 205] } }]);
             let addlTotal = 0;
             addlExpensesAll.forEach(e => {
                 addlTotal += e.amount;
                 const desc = `${e.label}${e.vendor ? ` (${e.vendor})` : ''}${e.remarks ? `\nRemarks: ${e.remarks}` : ''}`;
-                body.push([sl++, desc, e.invoiceNo, e.invoiceDate || "-", `Rs. ${e.amount.toFixed(2)}`]);
+                body.push([
+                    sl++,
+                    desc,
+                    e.invoiceNo,
+                    e.invoiceDate || "-",
+                    "-",
+                    "-",
+                    { content: e.amount.toFixed(2), _rupee: true }
+                ]);
             });
             grandTotal += addlTotal;
             body.push([
-                { content: "Additional Expenses Total", colSpan: 4, styles: { halign: 'right', fontStyle: 'bold' } },
-                { content: `Rs. ${addlTotal.toFixed(2)}`, styles: { halign: 'right', fontStyle: 'bold' } }
+                { content: "Additional Expenses Total", colSpan: 6, styles: { halign: 'right', fontStyle: 'bold' } },
+                { content: addlTotal.toFixed(2), _rupee: true, _boldRupee: true, styles: { halign: 'right', fontStyle: 'bold' } }
             ]);
         }
 
         body.push([
-            { content: "GRAND TOTAL", colSpan: 4, styles: { halign: 'right', fontStyle: 'bold', fontSize: 10, fillColor: [209, 231, 221] } },
-            { content: `Rs. ${grandTotal.toFixed(2)}`, styles: { halign: 'right', fontStyle: 'bold', fontSize: 10, fillColor: [209, 231, 221] } }
+            { content: "GRAND TOTAL", colSpan: 6, styles: { halign: 'right', fontStyle: 'bold', fontSize: 10, fillColor: [209, 231, 221] } },
+            { content: grandTotal.toFixed(2), _rupee: true, _boldRupee: true, styles: { halign: 'right', fontStyle: 'bold', fontSize: 10, fillColor: [209, 231, 221] } }
         ]);
 
         doc.autoTable({
-            head: [["Sl. No.", "Item & Item Specs", "Bill Number", "Bill Date", "Amount"]],
+            head: [["Sl. No.", "Item & Item Specs", "Bill Number", "Bill Date", "Cost / Piece", "Qty & Unit", "Amount"]],
             body,
             startY: Math.max(yLeft, yRight) + 4,
-            styles: { fontSize: 8, valign: 'top' },
+            styles: { fontSize: 8, valign: 'top', cellPadding: 2.5 },
             headStyles: { fillColor: [33, 37, 41], halign: 'center' },
-            columnStyles: { 0: { halign: 'center', cellWidth: 14 }, 2: { cellWidth: 28 }, 3: { halign: 'center', cellWidth: 24 }, 4: { halign: 'right', cellWidth: 28 } }
+            columnStyles: {
+                0: { halign: 'center', cellWidth: 13 },
+                1: { cellWidth: 96 },
+                2: { cellWidth: 28 },
+                3: { halign: 'center', cellWidth: 23 },
+                4: { halign: 'right', cellWidth: 28, cellPadding: { top: 2.5, right: 2.5, bottom: 2.5, left: 6 } },
+                5: { halign: 'center', cellWidth: 46 },
+                6: { halign: 'right', cellWidth: 35, cellPadding: { top: 2.5, right: 2.5, bottom: 2.5, left: 6 } }
+            },
+            didDrawCell: function(data) {
+                if (data.section === 'body' && data.cell.raw && data.cell.raw._rupee) {
+                    const isBold = !!data.cell.raw._boldRupee;
+                    const symSize = data.cell.styles.fontSize >= 10 ? 2.8 : 2.3;
+                    drawRupeeVector(doc, data.cell.x + 2.2, data.cell.y + 4.8, symSize, isBold);
+                }
+            }
         });
 
         let fy = doc.lastAutoTable.finalY + 8;
@@ -1971,7 +2040,7 @@ function generateExpenditureReport(format, vendorNames, vendorMap, addlExpensesA
             fy += 14;
         }
 
-        if (fy > 270) { doc.addPage(); fy = 28; }
+        if (fy > 185) { doc.addPage(); fy = 28; }
         doc.setFontSize(9); doc.setFont(undefined, 'normal');
         doc.line(pageW - 75, fy, pageW - 14, fy);
         doc.text("Signature", pageW - 44, fy + 5, { align: 'center' });
@@ -1984,10 +2053,11 @@ function generateExpenditureReport(format, vendorNames, vendorMap, addlExpensesA
     }
 
     // Printable view
+    const rupeeCell = (val, bold = false) => `<div class="amt-cell${bold ? ' fw-bold' : ''}"><span>₹</span><span>${val}</span></div>`;
     let sl = 1;
     let rowsHtml = "";
     vendorNames.forEach(v => {
-        rowsHtml += `<tr style="background:#e9ecef;"><td colspan="5"><strong>Vendor: ${esc(v)}</strong></td></tr>`;
+        rowsHtml += `<tr style="background:#e9ecef;"><td colspan="7"><strong>Vendor: ${esc(v)}</strong></td></tr>`;
         let vTotal = 0;
         vendorMap[v].forEach(it => {
             vTotal += it.amount;
@@ -2001,15 +2071,17 @@ function generateExpenditureReport(format, vendorNames, vendorMap, addlExpensesA
                 </td>
                 <td>${esc(it.billNo)}</td>
                 <td class="text-center">${esc(it.billDate || '-')}</td>
-                <td class="text-end">₹${it.amount.toFixed(2)}</td>
+                <td>${rupeeCell(it.costPerPiece.toFixed(2))}</td>
+                <td class="text-center">${formatQtyCellHtml(it)}</td>
+                <td>${rupeeCell(it.amount.toFixed(2))}</td>
             </tr>`;
         });
         grandTotal += vTotal;
-        rowsHtml += `<tr><td colspan="4" class="text-end"><strong>Vendor Total (${esc(v)})</strong></td><td class="text-end"><strong>₹${vTotal.toFixed(2)}</strong></td></tr>`;
+        rowsHtml += `<tr><td colspan="6" class="text-end"><strong>Vendor Total (${esc(v)})</strong></td><td>${rupeeCell(vTotal.toFixed(2), true)}</td></tr>`;
     });
 
     if (addlExpensesAll.length > 0) {
-        rowsHtml += `<tr style="background:#fff3cd;"><td colspan="5"><strong>Additional Expenses (Non-Item Bills)</strong></td></tr>`;
+        rowsHtml += `<tr style="background:#fff3cd;"><td colspan="7"><strong>Additional Expenses (Non-Item Bills)</strong></td></tr>`;
         let addlTotal = 0;
         addlExpensesAll.forEach(e => {
             addlTotal += e.amount;
@@ -2018,14 +2090,16 @@ function generateExpenditureReport(format, vendorNames, vendorMap, addlExpensesA
                 <td><strong>${esc(e.label)}</strong>${e.vendor ? ` (${esc(e.vendor)})` : ''}${e.remarks ? `<div class="small fst-italic">${esc(e.remarks)}</div>` : ''}</td>
                 <td>${esc(e.invoiceNo)}</td>
                 <td class="text-center">${esc(e.invoiceDate || '-')}</td>
-                <td class="text-end">₹${e.amount.toFixed(2)}</td>
+                <td class="text-center">-</td>
+                <td class="text-center">-</td>
+                <td>${rupeeCell(e.amount.toFixed(2))}</td>
             </tr>`;
         });
         grandTotal += addlTotal;
-        rowsHtml += `<tr><td colspan="4" class="text-end"><strong>Additional Expenses Total</strong></td><td class="text-end"><strong>₹${addlTotal.toFixed(2)}</strong></td></tr>`;
+        rowsHtml += `<tr><td colspan="6" class="text-end"><strong>Additional Expenses Total</strong></td><td>${rupeeCell(addlTotal.toFixed(2), true)}</td></tr>`;
     }
 
-    rowsHtml += `<tr style="background:#d1e7dd;font-size:13px;"><td colspan="4" class="text-end"><strong>GRAND TOTAL</strong></td><td class="text-end"><strong>₹${grandTotal.toFixed(2)}</strong></td></tr>`;
+    rowsHtml += `<tr style="background:#d1e7dd;font-size:13px;"><td colspan="6" class="text-end"><strong>GRAND TOTAL</strong></td><td>${rupeeCell(grandTotal.toFixed(2), true)}</td></tr>`;
 
     const html = `<!DOCTYPE html><html><head><title>Expenditure Report</title><style>
         body { font-family: Arial, sans-serif; margin: 24px; font-size: 12px; }
@@ -2033,9 +2107,11 @@ function generateExpenditureReport(format, vendorNames, vendorMap, addlExpensesA
         .meta { display: flex; justify-content: space-between; margin-bottom: 14px; gap: 24px; }
         table.rep-table { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
         table.rep-table th, table.rep-table td { border: 1px solid #333; padding: 6px; vertical-align: top; }
-        table.rep-table th { background: #f1f5f9; }
+        table.rep-table th { background: #f1f5f9; text-align: center; }
         .text-center { text-align: center; } .text-end { text-align: right; }
         .fst-italic { font-style: italic; } .small { font-size: 10.5px; color: #444; }
+        .fw-bold { font-weight: 700; }
+        .amt-cell { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; white-space: nowrap; }
         .sig { margin-top: 48px; text-align: right; }
         .sig-line { display: inline-block; width: 200px; border-top: 1px solid #111; text-align: center; padding-top: 4px; }
         .foot { margin-top: 16px; font-style: italic; font-size: 10px; color: #555; }
@@ -2049,7 +2125,7 @@ function generateExpenditureReport(format, vendorNames, vendorMap, addlExpensesA
             </div>
         </div>
         <table class="rep-table">
-            <thead><tr><th>Sl. No.</th><th>Item &amp; Item Specs</th><th>Bill Number</th><th>Bill Date</th><th>Amount</th></tr></thead>
+            <thead><tr><th>Sl. No.</th><th>Item &amp; Item Specs</th><th>Bill Number</th><th>Bill Date</th><th>Cost / Piece</th><th>Qty &amp; Unit</th><th>Amount</th></tr></thead>
             <tbody>${rowsHtml}</tbody>
         </table>
         ${buildBudgetTableHtml(budgetRows)}
