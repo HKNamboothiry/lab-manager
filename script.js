@@ -1389,13 +1389,14 @@ async function executeRfqExport() {
         listNames.forEach(ln => {
             const rows = (listsData[ln] && listsData[ln].rows) ? listsData[ln].rows : [];
             rows.forEach(r => {
+                if (!computeRowPQBD(r).P) return; // Include only Pending (P) items
                 if (targetVendor !== "ALL" && String(r['Selected Vendor'] || '').trim() !== targetVendor) return;
                 combinedRows.push(r);
             });
         });
 
         if (combinedRows.length === 0) {
-            alert("No items found for the selected list(s) and vendor.");
+            alert("No pending (P) items found for the selected list(s) and vendor.");
             return;
         }
 
