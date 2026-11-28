@@ -796,14 +796,16 @@ function renderTable() {
             const subUnitVal = pieceFlag ? '' : (row['Sub Unit'] || 'Piece');
 
             if (!row._isEditing) {
-                const isLocked = (g.key === 'acquired') || computeRowPQBD(row).D;
+                const pqbd = computeRowPQBD(row);
+                const isLocked = (g.key === 'acquired') || pqbd.D;
+                const isVendorLocked = isLocked || pqbd.B;
                 let selVendor = row['Selected Vendor'] || '';
                 let acqBadgeClass = acqQty >= reqQty && reqQty > 0 ? 'text-success fw-bold' : (acqQty > 0 ? 'text-warning fw-bold' : 'text-muted');
 
                 let vendorCells = activeVendors.map(v => {
                     let vPrice = row[v] ?? '';
                     let isNA = vPrice === 'NA';
-                    if (isLocked) {
+                    if (isVendorLocked) {
                         let txt = isNA ? '<span class="text-muted">NA</span>' : (vPrice !== '' ? `₹${parseFloat(vPrice).toFixed(2)}` : '-');
                         let cls = (selVendor === v) ? 'fw-bold text-primary' : 'text-muted';
                         return `<td class="vendor-cell text-center ${cls}">${txt}</td>`;
@@ -1160,7 +1162,8 @@ function toggleVendorNA(i, v) {
 
 function optimizeVendors() {
     currentListData.forEach(row => {
-        if (row._isEditing || getRowGroupKey(row) === 'acquired' || computeRowPQBD(row).D) return;
+        const pqbd = computeRowPQBD(row);
+        if (row._isEditing || getRowGroupKey(row) === 'acquired' || pqbd.D || pqbd.B) return;
         let bestVendor = '';
         let minPrice = Infinity;
         activeVendors.forEach(v => {
