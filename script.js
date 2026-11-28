@@ -1679,7 +1679,7 @@ async function executeFinancialExport() {
                 const subUnit = pieceFlag ? '' : String(r['Acquired Sub Unit'] || r['Sub Unit'] || 'Piece').trim();
                 const hasSub = !pieceFlag && subQty > 0;
                 const totalPieces = hasSub ? Number((qty * subQty).toFixed(2)) : qty;
-                const costPerPiece = totalPieces > 0 ? (billAmt / totalPieces) : billAmt;
+                const costPerQty = qty > 0 ? (billAmt / qty) : billAmt;
 
                 if (!vendorMap[vendor]) vendorMap[vendor] = [];
                 vendorMap[vendor].push({
@@ -1689,7 +1689,7 @@ async function executeFinancialExport() {
                     prefComp: String(r['Preferred Company'] || '').trim(),
                     code: String(r['Product Code'] || '').trim(),
                     billNo, billDate, amount: billAmt,
-                    qty, unit, hasSub, subQty, subUnit, totalPieces, costPerPiece
+                    qty, unit, hasSub, subQty, subUnit, totalPieces, costPerQty
                 });
             });
 
@@ -1886,7 +1886,7 @@ function generateExpenditureReport(format, vendorNames, vendorMap, addlExpensesA
             ...facLines.map(l => [l])
         ];
         if (toAddress) { aoa.push(["To:"]); toAddress.split('\n').forEach(l => aoa.push([l])); }
-        aoa.push([], ["Sl. No.", "Item & Item Specs", "Bill Number", "Bill Date", "Cost / Piece (₹)", "Qty & Unit", "Amount (₹)"]);
+        aoa.push([], ["Sl. No.", "Item & Item Specs", "Bill Number", "Bill Date", "Cost / Qty (₹)", "Qty", "Amount (₹)"]);
 
         let sl = 1;
         vendorNames.forEach(v => {
@@ -2010,7 +2010,7 @@ function generateExpenditureReport(format, vendorNames, vendorMap, addlExpensesA
         ]);
 
         doc.autoTable({
-            head: [["Sl. No.", "Item & Item Specs", "Bill Number", "Bill Date", "Cost / Piece", "Qty & Unit", "Amount"]],
+            head: [["Sl. No.", "Item & Item Specs", "Bill Number", "Bill Date", "Cost / Qty", "Qty", "Amount"]],
             body,
             startY: Math.max(yLeft, yRight) + 4,
             styles: { fontSize: 8, valign: 'top', cellPadding: 2.5 },
@@ -2071,7 +2071,7 @@ function generateExpenditureReport(format, vendorNames, vendorMap, addlExpensesA
                 </td>
                 <td>${esc(it.billNo)}</td>
                 <td class="text-center">${esc(it.billDate || '-')}</td>
-                <td>${rupeeCell(it.costPerPiece.toFixed(2))}</td>
+                <td>${rupeeCell(it.costPerQty.toFixed(2))}</td>
                 <td class="text-center">${formatQtyCellHtml(it)}</td>
                 <td>${rupeeCell(it.amount.toFixed(2))}</td>
             </tr>`;
@@ -2125,7 +2125,7 @@ function generateExpenditureReport(format, vendorNames, vendorMap, addlExpensesA
             </div>
         </div>
         <table class="rep-table">
-            <thead><tr><th>Sl. No.</th><th>Item &amp; Item Specs</th><th>Bill Number</th><th>Bill Date</th><th>Cost / Piece</th><th>Qty &amp; Unit</th><th>Amount</th></tr></thead>
+            <thead><tr><th>Sl. No.</th><th>Item &amp; Item Specs</th><th>Bill Number</th><th>Bill Date</th><th>Cost / Qty</th><th>Qty &amp; Unit</th><th>Amount</th></tr></thead>
             <tbody>${rowsHtml}</tbody>
         </table>
         ${buildBudgetTableHtml(budgetRows)}
