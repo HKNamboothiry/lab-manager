@@ -1023,20 +1023,30 @@ function selectVendor(i, v) {
 }
 
 function calcTotal() {
-    let itemTotal = 0;
+    let billedItemTotal = 0;
+    let estimatedItemTotal = 0;
+
     currentListData.forEach(r => {
-        if (!r._isEditing && hasCompleteBill(r)) {
-            itemTotal += parseFloat(r['Bill Amount']) || 0;
+        if (r._isEditing) return;
+        estimatedItemTotal += getRowEffectiveAmount(r);
+        if (hasCompleteBill(r)) {
+            billedItemTotal += parseFloat(r['Bill Amount']) || 0;
         }
     });
-    let nonItemTotal = nonItemExpenses.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0);
-    let grandTotal = itemTotal + nonItemTotal;
 
+    let nonItemTotal = nonItemExpenses.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0);
+    let totalSpent = billedItemTotal + nonItemTotal;
+    let totalEstimated = estimatedItemTotal + nonItemTotal;
+
+    const estEl = document.getElementById('estimatedTotalDisplay');
     const itemEl = document.getElementById('itemCostDisplay');
     const nonItemEl = document.getElementById('nonItemCostDisplay');
-    if (itemEl) itemEl.innerText = '₹' + itemTotal.toFixed(2);
+
+    if (estEl) estEl.innerText = '₹' + totalEstimated.toFixed(2);
+    if (itemEl) itemEl.innerText = '₹' + billedItemTotal.toFixed(2);
     if (nonItemEl) nonItemEl.innerText = '₹' + nonItemTotal.toFixed(2);
-    document.getElementById('totalBudget').innerText = '₹' + grandTotal.toFixed(2);
+    document.getElementById('totalBudget').innerText = '₹' + totalSpent.toFixed(2);
+
     calcBalance();
     renderVendorTotals();
 }
