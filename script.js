@@ -242,8 +242,6 @@ function showApp() {
     document.getElementById('uiRole').innerText = USER.role;
 
     if (USER.role === "Admin" || USER.role === "Lab Supervisor") {
-        document.getElementById('budgetInHand').disabled = false;
-        document.getElementById('btnUpdateBudget').style.display = "block";
         document.getElementById('btnUsers').style.display = "inline-block";
     }
     fetchInitData();
@@ -336,6 +334,22 @@ async function handleListChange() {
     } else {
         nonItemExpenses = [];
     }
+
+    // Show Created Date & Time badge right after Alerts button
+    const createdBadge = document.getElementById('listCreatedBadge');
+    const createdText = document.getElementById('listCreatedText');
+    if (listMeta && listMeta.createdDate) {
+        createdText.innerText = listMeta.createdDate;
+        createdBadge.style.display = 'inline-block';
+    } else {
+        createdBadge.style.display = 'none';
+    }
+
+    // Only the first chronological list's Assigned Budget is editable; later lists auto-inherit
+    const canEditBudget = (USER.role === "Admin" || USER.role === "Lab Supervisor") && (!listMeta || listMeta.isFirstList);
+    document.getElementById('budgetInHand').disabled = !canEditBudget;
+    document.getElementById('btnUpdateBudget').style.display = canEditBudget ? 'block' : 'none';
+
     updateClosedUI();
     renderNonItemExpenses();
 
@@ -434,7 +448,7 @@ function renderNonItemExpenses() {
     tbody.innerHTML = nonItemExpenses.map((exp, idx) => `
         <tr>
             <td><input type="text" class="form-control form-control-sm" placeholder="e.g., Marketplace fee, GST, Shipping" value="${esc(exp.label || '')}" oninput="nonItemExpenses[${idx}].label = this.value" ${closed ? 'disabled' : ''}></td>
-            <td><input type="text" class="form-control form-control-sm" placeholder="Vendor / Payee" value="${esc(exp.vendor || '')}" oninput="nonItemExpenses[${idx}].vendor = this.value" ${closed ? 'disabled' : ''}></td>
+            <td><input type="text" class="form-control form-control-sm" placeholder="Vendor / Payee" value="${esc(exp.vendor || '')}" oninput="nonItemExpenses[${idx}].vendor = this.value; renderVendorTotals();" ${closed ? 'disabled' : ''}></td>
             <td><input type="text" class="form-control form-control-sm" placeholder="Invoice #" value="${esc(exp.invoiceNo || '')}" oninput="nonItemExpenses[${idx}].invoiceNo = this.value" ${closed ? 'disabled' : ''}></td>
             <td><input type="date" class="form-control form-control-sm" value="${esc(toIsoDate(exp.invoiceDate))}" onchange="nonItemExpenses[${idx}].invoiceDate = formatDateOnly(this.value)" ${closed ? 'disabled' : ''}></td>
             <td><input type="number" step="0.01" min="0" class="form-control form-control-sm" placeholder="0.00" value="${esc(exp.amount ?? '')}" oninput="nonItemExpenses[${idx}].amount = this.value; calcTotal();" ${closed ? 'disabled' : ''}></td>
@@ -483,8 +497,11 @@ async function saveNonItemExpenses(showAlert = false) {
             listName: listName, additionalExpenses: clean
         });
         nonItemExpenses = clean;
-        const meta = getCurrentListMeta();
-        if (meta) meta.additionalExpenses = JSON.stringify(clean);
+        const initRes = await apiPost({ action: "getInit", username: USER.username, role: USER.role });
+        if (initRes.status === "success") {
+            activeLists = initRes.lists || activeLists;
+            latestInheritedBudget = initRes.latestBudget || latestInheritedBudget;
+        }
         renderNonItemExpenses();
         if (showAlert) alert("Additional expenses saved to Google Sheets.");
     } catch (e) {
@@ -651,7 +668,7 @@ async function reopenCurrentList() {
 }
 
 // -------------------------------------------------------------
-// MAIN TABLE RENDERING
+// MAIN TABLE RENDERING & BILL-DRIVEN TOTAL ESTIMATE
 // -------------------------------------------------------------
 function toggleCode(elem) {
     const tr = elem.closest('tr');
@@ -952,17 +969,12 @@ function toggleSubQtyInput(unitSel) {
 }
 
 // -------------------------------------------------------------
-// LIVE UPDATE & COST BREAKDOWN ENGINE
+// LIVE UPDATE, COST BREAKDOWN & VENDOR TOTALS ENGINE
 // -------------------------------------------------------------
 function updateLiveRow(i, field, val) {
     currentListData[i][field] = val;
     if (field === 'Required Quantity') {
-        let sv = currentListData[i]['Selected Vendor'];
-        if (sv && currentListData[i][sv] && currentListData[i][sv] !== 'NA' && !(parseFloat(currentListData[i]['Bill Amount']) > 0)) {
-            let price = parseFloat(currentListData[i][sv]) || 0;
-            let qty = parseFloat(val) || 0;
-            currentListData[i]['Total Estimate'] = (price * qty).toFixed(2);
-        }
+        recalculateRowTotalEstimate(currentListData[i]);
         renderTable();
     }
 }
@@ -996,23 +1008,17 @@ function updateLiveSubUnit(i, sel) {
 
 function updateVendorPrice(i, v, val) {
     currentListData[i][v] = val;
-    if (currentListData[i]['Selected Vendor'] === v && !(parseFloat(currentListData[i]['Bill Amount']) > 0)) {
-        let price = parseFloat(val) || 0;
-        let qty = parseFloat(currentListData[i]['Required Quantity']) || 0;
-        currentListData[i]['Total Estimate'] = (price * qty).toFixed(2);
+    if (currentListData[i]['Selected Vendor'] === v && !hasCompleteBill(currentListData[i])) {
+        recalculateRowTotalEstimate(currentListData[i]);
         const totalCell = document.getElementById(`rowTotal_${i}`);
-        if (totalCell) totalCell.innerText = '₹' + (price * qty).toFixed(2);
+        if (totalCell) totalCell.innerText = '₹' + getRowEffectiveAmount(currentListData[i]).toFixed(2);
     }
     calcTotal();
 }
 
 function selectVendor(i, v) {
     currentListData[i]['Selected Vendor'] = v;
-    if (!(parseFloat(currentListData[i]['Bill Amount']) > 0)) {
-        let price = parseFloat(currentListData[i][v]) || 0;
-        let qty = parseFloat(currentListData[i]['Required Quantity']) || 0;
-        currentListData[i]['Total Estimate'] = (price * qty).toFixed(2);
-    }
+    recalculateRowTotalEstimate(currentListData[i]);
     renderTable();
 }
 
@@ -1030,6 +1036,41 @@ function calcTotal() {
     if (nonItemEl) nonItemEl.innerText = '₹' + nonItemTotal.toFixed(2);
     document.getElementById('totalBudget').innerText = '₹' + grandTotal.toFixed(2);
     calcBalance();
+    renderVendorTotals();
+}
+
+function renderVendorTotals() {
+    const container = document.getElementById('vendorTotalsContainer');
+    if (!container) return;
+    const totals = {};
+
+    currentListData.forEach(r => {
+        if (r._isEditing) return;
+        const amt = getRowEffectiveAmount(r);
+        if (amt <= 0) return;
+        const v = String(r['Selected Vendor'] || 'Unassigned').trim() || 'Unassigned';
+        totals[v] = (totals[v] || 0) + amt;
+    });
+
+    nonItemExpenses.forEach(e => {
+        const amt = parseFloat(e.amount) || 0;
+        if (amt <= 0) return;
+        const v = String(e.vendor || 'Additional / General').trim() || 'Additional / General';
+        totals[v] = (totals[v] || 0) + amt;
+    });
+
+    const entries = Object.entries(totals).sort((a, b) => b[1] - a[1]);
+    if (entries.length === 0) {
+        container.innerHTML = `<span class="text-muted small fst-italic">No vendor expenditures recorded yet.</span>`;
+        return;
+    }
+
+    container.innerHTML = entries.map(([v, amt]) => `
+        <div class="border rounded px-3 py-1 bg-light d-flex align-items-center gap-2">
+            <span class="fw-semibold text-dark small">${esc(v)}</span>
+            <span class="badge bg-success-subtle text-success border border-success-subtle fs-6">₹${amt.toFixed(2)}</span>
+        </div>
+    `).join('');
 }
 
 function calcBalance() {
@@ -1045,8 +1086,8 @@ document.getElementById('budgetInHand').addEventListener('input', calcBalance);
 async function updateBudget() {
     const b = document.getElementById('budgetInHand').value;
     await apiPost({ action: "manageList", subAction: "updateMeta", listName: document.getElementById('listSelector').value, budget: b });
-    latestInheritedBudget = b;
-    alert("Budget saved.");
+    await fetchInitData();
+    alert("Budget saved and cascaded to subsequent lists.");
 }
 
 function handleEnter(e, elem, index) {
@@ -1099,7 +1140,7 @@ function toggleVendorNA(i, v) {
         currentListData[i][v] = 'NA';
         if (currentListData[i]['Selected Vendor'] === v) {
             currentListData[i]['Selected Vendor'] = '';
-            currentListData[i]['Total Estimate'] = '';
+            recalculateRowTotalEstimate(currentListData[i]);
         }
     }
     renderTable();
@@ -1116,10 +1157,7 @@ function optimizeVendors() {
         });
         if (bestVendor) {
             row['Selected Vendor'] = bestVendor;
-            if (!(parseFloat(row['Bill Amount']) > 0)) {
-                let qty = parseFloat(row['Required Quantity']) || 0;
-                row['Total Estimate'] = (minPrice * qty).toFixed(2);
-            }
+            recalculateRowTotalEstimate(row);
         }
     });
     renderTable();
@@ -1221,14 +1259,7 @@ async function saveRow(i) {
     };
 
     activeVendors.forEach(v => { currentListData[i][v] = orig[v] !== undefined ? orig[v] : ''; });
-
-    if (parseFloat(currentListData[i]['Bill Amount']) > 0) {
-        currentListData[i]['Total Estimate'] = parseFloat(currentListData[i]['Bill Amount']).toFixed(2);
-    } else if (sv && currentListData[i][sv] && currentListData[i][sv] !== 'NA') {
-        currentListData[i]['Total Estimate'] = (parseFloat(currentListData[i][sv]) * qty).toFixed(2);
-    } else {
-        currentListData[i]['Total Estimate'] = '';
-    }
+    recalculateRowTotalEstimate(currentListData[i]);
 
     const btns = tr.querySelectorAll('button');
     btns[0].innerHTML = '<i class="bi bi-hourglass-split"></i>';
@@ -1261,6 +1292,7 @@ async function syncTableToBackend() {
         productDB = initRes.products || productDB;
         vendorDB = initRes.vendors || vendorDB;
         activeLists = initRes.lists || activeLists;
+        latestInheritedBudget = initRes.latestBudget || latestInheritedBudget;
         globalAlerts = initRes.alerts || globalAlerts;
         renderTable();
         updateAlertBadge();
@@ -1340,7 +1372,7 @@ async function saveListSettings() {
 }
 
 // -------------------------------------------------------------
-// MULTI-LIST PILL SELECTOR HELPER
+// MULTI-LIST PILL SELECTOR & BUDGET SPENDING TABLE HELPERS
 // -------------------------------------------------------------
 function renderListPills(containerId, selectedSet) {
     const el = document.getElementById(containerId);
@@ -1358,7 +1390,7 @@ function toggleExportListPill(containerId, listName) {
     const set = containerId === 'rfqListPills' ? selectedRfqLists
         : (containerId === 'finListPills' ? selectedFinLists : selectedStockRepLists);
     if (set.has(listName)) {
-        if (set.size === 1) return; // keep at least one selected
+        if (set.size === 1) return;
         set.delete(listName);
     } else {
         set.add(listName);
@@ -1366,8 +1398,64 @@ function toggleExportListPill(containerId, listName) {
     renderListPills(containerId, set);
 }
 
+function buildBudgetSpendingRows(listNames) {
+    const selected = activeLists.filter(l => listNames.includes(l.name));
+    return selected.map(l => ({
+        name: l.name,
+        createdDate: l.createdDate || "N/A",
+        assigned: (parseFloat(l.budget) || 0).toFixed(2),
+        spent: (parseFloat(l.spentAmount) || 0).toFixed(2),
+        balance: (parseFloat(l.balance) || 0).toFixed(2)
+    }));
+}
+
+function appendBudgetTableToPdf(doc, budgetRows, startY) {
+    if (!budgetRows || budgetRows.length === 0) return startY;
+    doc.setFontSize(10); doc.setFont(undefined, 'bold');
+    doc.text("Budget Spending Summary", 14, startY);
+    doc.autoTable({
+        head: [["List Name", "Creation Date", "Assigned Budget", "Spent Amount", "Balance"]],
+        body: budgetRows.map(r => [r.name, r.createdDate, `Rs. ${r.assigned}`, `Rs. ${r.spent}`, `Rs. ${r.balance}`]),
+        startY: startY + 3,
+        styles: { fontSize: 8 },
+        headStyles: { fillColor: [33, 37, 41], halign: 'center' },
+        columnStyles: { 1: { halign: 'center' }, 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' } },
+        didParseCell: function(data) {
+            if (data.section === 'body' && data.row.index === budgetRows.length - 1 && data.column.index === 4) {
+                data.cell.styles.fontStyle = 'bold';
+                data.cell.styles.fillColor = [255, 243, 205];
+                data.cell.styles.textColor = [13, 110, 253];
+                data.cell.styles.fontSize = 9;
+            }
+        }
+    });
+    return doc.lastAutoTable.finalY + 6;
+}
+
+function buildBudgetTableHtml(budgetRows) {
+    if (!budgetRows || budgetRows.length === 0) return "";
+    const rows = budgetRows.map((r, idx) => {
+        const isLast = idx === budgetRows.length - 1;
+        const balStyle = isLast
+            ? 'style="background:#fff3cd;color:#0d6efd;font-weight:800;font-size:13px;border:2px solid #0d6efd;"'
+            : '';
+        return `<tr>
+            <td>${esc(r.name)}</td>
+            <td class="text-center">${esc(r.createdDate)}</td>
+            <td class="text-end">₹${r.assigned}</td>
+            <td class="text-end">₹${r.spent}</td>
+            <td class="text-end" ${balStyle}>₹${r.balance}</td>
+        </tr>`;
+    }).join('');
+    return `<h4 style="margin-top:16px;margin-bottom:6px;">Budget Spending Summary</h4>
+        <table class="rep-table">
+            <thead><tr><th>List Name</th><th>Creation Date</th><th>Assigned Budget</th><th>Spent Amount</th><th>Balance</th></tr></thead>
+            <tbody>${rows}</tbody>
+        </table>`;
+}
+
 // -------------------------------------------------------------
-// EXPORT 1: REQUEST FOR QUOTATION (RFQ)
+// EXPORT 1: REQUEST FOR QUOTATION (RFQ — ONLY 'P' ITEMS)
 // -------------------------------------------------------------
 function openRfqModal() {
     const fac = getEffectiveFacultyAddress();
@@ -1540,6 +1628,8 @@ async function executeFinancialExport() {
     const reportType = document.getElementById('finReportType').value;
     const format = reportType === 'summary' ? 'pdf' : document.getElementById('finFormatSelect').value;
     const toAddress = (document.getElementById('finToAddress').value || "").trim();
+    const includeBudgetTable = document.getElementById('finIncludeBudgetTable').checked;
+    const budgetRows = includeBudgetTable ? buildBudgetSpendingRows(listNames) : [];
 
     const btn = document.getElementById('btnRunFinExport');
     btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Generating...';
@@ -1549,7 +1639,6 @@ async function executeFinancialExport() {
         const res = await apiPost({ action: "getMultipleListsData", listNames });
         const listsData = res.listsData || {};
 
-        // Collect all items having both Bill Number and Bill Amount
         const vendorMap = {};
         const addlExpensesAll = [];
 
@@ -1573,7 +1662,6 @@ async function executeFinancialExport() {
                 });
             });
 
-            // Collect additional non-item bills for this list
             const meta = activeLists.find(l => l.name === ln);
             if (meta && meta.additionalExpenses) {
                 try {
@@ -1603,7 +1691,6 @@ async function executeFinancialExport() {
             return;
         }
 
-        // Sort each vendor's items ascending by Bill Date then Bill Number
         vendorNames.forEach(v => {
             vendorMap[v].sort((a, b) => {
                 const dCmp = parseDateSortable(a.billDate).localeCompare(parseDateSortable(b.billDate));
@@ -1619,9 +1706,9 @@ async function executeFinancialExport() {
         bootstrap.Modal.getInstance(document.getElementById('financialModal')).hide();
 
         if (reportType === 'summary') {
-            generateSummaryReportPdf(vendorNames, vendorMap, addlExpensesAll, facLines, toAddress, genDate, exporterNote, includedNote);
+            generateSummaryReportPdf(vendorNames, vendorMap, addlExpensesAll, facLines, toAddress, genDate, exporterNote, includedNote, budgetRows);
         } else {
-            generateExpenditureReport(format, vendorNames, vendorMap, addlExpensesAll, facLines, toAddress, genDate, exporterNote, includedNote);
+            generateExpenditureReport(format, vendorNames, vendorMap, addlExpensesAll, facLines, toAddress, genDate, exporterNote, includedNote, budgetRows);
         }
     } finally {
         btn.innerHTML = '<i class="bi bi-file-earmark-pdf"></i> Generate Statement';
@@ -1629,7 +1716,7 @@ async function executeFinancialExport() {
     }
 }
 
-function generateSummaryReportPdf(vendorNames, vendorMap, addlExpensesAll, facLines, toAddress, genDate, exporterNote, includedNote) {
+function generateSummaryReportPdf(vendorNames, vendorMap, addlExpensesAll, facLines, toAddress, genDate, exporterNote, includedNote, budgetRows) {
     const doc = new jspdf.jsPDF('portrait');
     const pageW = doc.internal.pageSize.getWidth();
 
@@ -1711,7 +1798,13 @@ function generateSummaryReportPdf(vendorNames, vendorMap, addlExpensesAll, facLi
         columnStyles: { 0: { halign: 'center', cellWidth: 18 }, 2: { halign: 'center', cellWidth: 32 }, 3: { halign: 'right', cellWidth: 38 } }
     });
 
-    let fy = doc.lastAutoTable.finalY + 22;
+    let fy = doc.lastAutoTable.finalY + 8;
+    if (budgetRows && budgetRows.length > 0) {
+        fy = appendBudgetTableToPdf(doc, budgetRows, fy) + 14;
+    } else {
+        fy += 14;
+    }
+
     if (fy > 270) { doc.addPage(); fy = 28; }
     doc.setFontSize(9); doc.setFont(undefined, 'normal');
     doc.line(pageW - 75, fy, pageW - 14, fy);
@@ -1723,7 +1816,7 @@ function generateSummaryReportPdf(vendorNames, vendorMap, addlExpensesAll, facLi
     doc.save(`Financial_Summary_Report_${genDate.replace(/\//g, '-')}.pdf`);
 }
 
-function generateExpenditureReport(format, vendorNames, vendorMap, addlExpensesAll, facLines, toAddress, genDate, exporterNote, includedNote) {
+function generateExpenditureReport(format, vendorNames, vendorMap, addlExpensesAll, facLines, toAddress, genDate, exporterNote, includedNote, budgetRows) {
     let grandTotal = 0;
 
     if (format === 'excel') {
@@ -1760,7 +1853,13 @@ function generateExpenditureReport(format, vendorNames, vendorMap, addlExpensesA
             grandTotal += addlTotal;
             aoa.push(["", "", "", "Additional Expenses Total", addlTotal.toFixed(2)]);
         }
-        aoa.push([], ["", "", "", "GRAND TOTAL", grandTotal.toFixed(2)], [], [exporterNote], [includedNote]);
+        aoa.push([], ["", "", "", "GRAND TOTAL", grandTotal.toFixed(2)]);
+
+        if (budgetRows && budgetRows.length > 0) {
+            aoa.push([], ["BUDGET SPENDING SUMMARY"], ["List Name", "Creation Date", "Assigned Budget", "Spent Amount", "Balance"]);
+            budgetRows.forEach(r => aoa.push([r.name, r.createdDate, r.assigned, r.spent, r.balance]));
+        }
+        aoa.push([], [exporterNote], [includedNote]);
 
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), "Expenditure Report");
@@ -1844,7 +1943,13 @@ function generateExpenditureReport(format, vendorNames, vendorMap, addlExpensesA
             columnStyles: { 0: { halign: 'center', cellWidth: 14 }, 2: { cellWidth: 28 }, 3: { halign: 'center', cellWidth: 24 }, 4: { halign: 'right', cellWidth: 28 } }
         });
 
-        let fy = doc.lastAutoTable.finalY + 22;
+        let fy = doc.lastAutoTable.finalY + 8;
+        if (budgetRows && budgetRows.length > 0) {
+            fy = appendBudgetTableToPdf(doc, budgetRows, fy) + 14;
+        } else {
+            fy += 14;
+        }
+
         if (fy > 270) { doc.addPage(); fy = 28; }
         doc.setFontSize(9); doc.setFont(undefined, 'normal');
         doc.line(pageW - 75, fy, pageW - 14, fy);
@@ -1905,9 +2010,9 @@ function generateExpenditureReport(format, vendorNames, vendorMap, addlExpensesA
         body { font-family: Arial, sans-serif; margin: 24px; font-size: 12px; }
         .hdr { text-align: center; } .hdr h2 { margin: 0; } .hdr h4 { margin: 4px 0 12px; }
         .meta { display: flex; justify-content: space-between; margin-bottom: 14px; gap: 24px; }
-        table { width: 100%; border-collapse: collapse; }
-        th, td { border: 1px solid #333; padding: 6px; vertical-align: top; }
-        th { background: #f1f5f9; }
+        table.rep-table { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
+        table.rep-table th, table.rep-table td { border: 1px solid #333; padding: 6px; vertical-align: top; }
+        table.rep-table th { background: #f1f5f9; }
         .text-center { text-align: center; } .text-end { text-align: right; }
         .fst-italic { font-style: italic; } .small { font-size: 10.5px; color: #444; }
         .sig { margin-top: 48px; text-align: right; }
@@ -1922,10 +2027,11 @@ function generateExpenditureReport(format, vendorNames, vendorMap, addlExpensesA
                 ${toAddress ? `<div style="margin-top:6px;"><strong>To:</strong><br>${esc(toAddress).replace(/\n/g, '<br>')}</div>` : ''}
             </div>
         </div>
-        <table>
+        <table class="rep-table">
             <thead><tr><th>Sl. No.</th><th>Item &amp; Item Specs</th><th>Bill Number</th><th>Bill Date</th><th>Amount</th></tr></thead>
             <tbody>${rowsHtml}</tbody>
         </table>
+        ${buildBudgetTableHtml(budgetRows)}
         <div class="sig"><div class="sig-line">Signature</div></div>
         <div class="foot"><div>${esc(exporterNote)}</div><div>${esc(includedNote)}</div></div>
     </body></html>`;
@@ -1983,25 +2089,24 @@ function buildParticularPlain(itemName, specs, prefComp, code, refLink) {
 
 async function buildStockReportModel() {
     const listNames = Array.from(selectedStockRepLists);
+    const includeBudgetTable = document.getElementById('stockIncludeBudgetTable').checked;
+    const budgetRows = includeBudgetTable ? buildBudgetSpendingRows(listNames) : [];
+
     const res = await apiPost({ action: "getMultipleListsData", listNames });
     const listsData = res.listsData || {};
 
     let cleanRows = [];
     let allExpenses = [];
-    let totalBudgetAssigned = 0;
 
     listNames.forEach(ln => {
         const rows = (listsData[ln] && listsData[ln].rows) ? listsData[ln].rows : [];
         cleanRows = cleanRows.concat(rows);
         const meta = activeLists.find(l => l.name === ln);
-        if (meta) {
-            totalBudgetAssigned += (parseFloat(meta.budget) || 0);
-            if (meta.additionalExpenses) {
-                try {
-                    const arr = JSON.parse(meta.additionalExpenses);
-                    if (Array.isArray(arr)) allExpenses = allExpenses.concat(arr);
-                } catch (e) {}
-            }
+        if (meta && meta.additionalExpenses) {
+            try {
+                const arr = JSON.parse(meta.additionalExpenses);
+                if (Array.isArray(arr)) allExpenses = allExpenses.concat(arr);
+            } catch (e) {}
         }
     });
 
@@ -2111,8 +2216,7 @@ async function buildStockReportModel() {
         includedNote: `Included lists: ${listNames.join(", ")}`,
         createdDate, lastProcDate, prepDate: nowStr, preparedBy,
         procGroups, subTotal, validExpenses, grandTotal, hasIncompleteItem,
-        budgetAmount: totalBudgetAssigned, spentAmount: grandTotal, remainingAmount: totalBudgetAssigned - grandTotal,
-        stockSummaryRows
+        budgetRows, stockSummaryRows
     };
 }
 
@@ -2154,8 +2258,6 @@ async function printProcurementSummary() {
         table.rep-table th { background: #f1f5f9; text-align: center; }
         .text-center { text-align: center; } .text-end { text-align: right; }
         .fst-italic { font-style: italic; } .small { font-size: 11px; } .text-muted { color: #555; }
-        .box-summary { width: 340px; border-collapse: collapse; margin-bottom: 18px; }
-        .box-summary td { border: 1px solid #333; padding: 5px 8px; }
         .foot { margin-top: 14px; font-style: italic; font-size: 10px; color: #555; }
     </style></head><body>
         <div class="report-title">${esc(m.labName)}</div>
@@ -2174,12 +2276,6 @@ async function printProcurementSummary() {
             </tbody>
         </table>
         ${m.hasIncompleteItem ? `<div class="fst-italic small mb-2">*Not acquired completely</div>` : ''}
-        <table class="box-summary">
-            <tr><td colspan="2"><strong>Budget Summary</strong></td></tr>
-            <tr><td>Budget Amount</td><td class="text-end">₹${m.budgetAmount.toFixed(2)}</td></tr>
-            <tr><td>Spent Amount</td><td class="text-end">₹${m.spentAmount.toFixed(2)}</td></tr>
-            <tr><td>Remaining Amount</td><td class="text-end">₹${m.remainingAmount.toFixed(2)}</td></tr>
-        </table>
         <h4>Stock Summary</h4>
         <table class="rep-table">
             <thead>
@@ -2188,6 +2284,7 @@ async function printProcurementSummary() {
             </thead>
             <tbody>${stockRowsHtml}</tbody>
         </table>
+        ${buildBudgetTableHtml(m.budgetRows)}
         <div class="foot">${esc(m.includedNote)}</div>
     </body></html>`;
     const win = window.open('', '', 'width=1024,height=720');
@@ -2242,13 +2339,6 @@ async function downloadProcurementSummaryPdf() {
     let curY = doc.lastAutoTable.finalY + 6;
     if (m.hasIncompleteItem) { doc.setFontSize(8.5); doc.setFont(undefined, 'italic'); doc.text("*Not acquired completely", 14, curY); doc.setFont(undefined, 'normal'); curY += 6; }
 
-    doc.autoTable({
-        head: [[{ content: "Budget Summary", colSpan: 2 }]],
-        body: [["Budget Amount", `Rs. ${m.budgetAmount.toFixed(2)}`], ["Spent Amount", `Rs. ${m.spentAmount.toFixed(2)}`], ["Remaining Amount", `Rs. ${m.remainingAmount.toFixed(2)}`]],
-        startY: curY, tableWidth: 95, styles: { fontSize: 8 }, headStyles: { fillColor: [55, 65, 81] }, columnStyles: { 1: { halign: 'right' } }
-    });
-
-    curY = doc.lastAutoTable.finalY + 8;
     doc.setFontSize(11); doc.setFont(undefined, 'bold'); doc.text("Stock Summary", 14, curY);
 
     doc.autoTable({
@@ -2260,8 +2350,13 @@ async function downloadProcurementSummaryPdf() {
         startY: curY + 3, styles: { fontSize: 8, valign: 'top' }, headStyles: { fillColor: [33, 37, 41], halign: 'center' }
     });
 
+    let finalY = doc.lastAutoTable.finalY + 7;
+    if (m.budgetRows && m.budgetRows.length > 0) {
+        finalY = appendBudgetTableToPdf(doc, m.budgetRows, finalY);
+    }
+
     doc.setFontSize(7.5); doc.setFont(undefined, 'italic');
-    doc.text(m.includedNote, 14, doc.lastAutoTable.finalY + 7);
+    doc.text(m.includedNote, 14, finalY + 2);
     doc.save(`Stock_Report_${m.prepDate.replace(/\//g, '-')}.pdf`);
 }
 
